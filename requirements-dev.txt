@@ -1,0 +1,28 @@
+# MetricHunter V2 — Pipeline / analiz / test icin full set.
+# Uretim kurulumu icin once requirements.txt'yi kurun, sonra bunu.
+
+-r requirements.txt
+
+# Veri toplama (F2)
+pydriller>=2.5
+prospector>=1.10
+
+# Interactive analiz (.py + # %% <-> .ipynb)
+jupytext>=1.16
+ipykernel>=6.29
+
+# Plotlar (F4/F5)
+matplotlib>=3.8
+
+# Progress bar
+tqdm>=4.66
+
+# Test
+pytest>=7
+pytest-mock>=3
+responses>=0.24
+
+# Format + lint
+black>=23
+isort>=5
+ruff>=0.1

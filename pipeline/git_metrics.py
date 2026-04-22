@@ -1,0 +1,200 @@
+"""
+git_metrics.py — Git log/churn/bug-keyword metrikleri.
+
+V1'deki app/git_utils.py'den taşindi (PLAN §3.5). Bug keyword baseline
+burada kalir; SZZ etiketi `pipeline.szz` icinde hesaplanir.
+
+Tek git-log cagrisi tum dosyalarin istatistiklerini uretir (N sorgu yerine 1).
+"""
+from __future__ import annotations
+
+import logging
+import re
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from pipeline.config import GIT_LOG_TIMEOUT_SECONDS, RECENT_COMMIT_WINDOW_DAYS
+
+logger = logging.getLogger(__name__)
+
+
+# ── Filtre ve etiket regex'leri ──────────────────────────────────
+
+SKIP_PATTERNS = (
+    r"__init__\.py$",
+    r"setup\.py$",
+    r"conftest\.py$",
+    r"manage\.py$",
+    r"/migrations?/",
+    r"/tests?/",
+    r"test_[^/]+\.py$",
+    r"[^/]+_test\.py$",
+    r"/docs?/",
+    r"/examples?/",
+    r"/vendor/",
+    r"conf\.py$",
+    r"__main__\.py$",
+    r"/\.",
+)
+SKIP_REGEX = re.compile("|".join(SKIP_PATTERNS))
+
+BUG_KEYWORDS = re.compile(
+    r"(?:"
+    r"\b(fix(es|ed|ing)?|bug(s|gy)?|defect(s|ive)?|fault(s|y)?)\b"
+    r"|\b(error(s)?|patch(es|ed|ing)?|resolv(e|es|ed|ing)?)\b"
+    r"|\b(crash(es|ed|ing)?|regression(s)?)\b"
+    r"|\b(hotfix|bugfix|workaround|repair(ed|ing)?|typo(s)?)\b"
+    r"|\b(broken|failure(s)?|fail(s|ed|ing)?)\b"
+    r"|\b(null.?pointer|npe|exception|traceback|segfault|overflow)\b"
+    r"|^fix[\(:]"
+    r"|\b(fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s*#\d+"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+# ── Public API ───────────────────────────────────────────────────
+
+def should_skip_file(file_path: str) -> bool:
+    """Test/init/migration gibi analiz disi dosya mi?"""
+    return bool(SKIP_REGEX.search(file_path))
+
+
+def is_bug_message(commit_message: str) -> bool:
+    """Commit mesaji bug anahtar kelimelerini icerir mi?"""
+    return bool(BUG_KEYWORDS.search(commit_message or ""))
+
+
+def get_head_python_files(repo_path: Path) -> list[str]:
+    """HEAD'deki tum .py dosyalarinin repo-relative yollari."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        logger.warning("ls-tree basarisiz (%s): %s", repo_path, exc)
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    files = result.stdout.strip().split("\n")
+    return [f for f in files if f.endswith(".py") and f.strip()]
+
+
+def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict]:
+    """
+    Tek git-log cagrisi ile her dosyanin process metriklerini uret.
+
+    Returns:
+        {file_path: {
+            'commit_count', 'bug_count', 'n_authors', 'file_age_days',
+            'churn_total', 'avg_churn_per_commit', 'max_single_churn',
+            'recent_commits_90d'
+        }}
+        Git hatasi veya head_files bossa {} doner.
+    """
+    if not head_files:
+        return {}
+
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=COMMIT|%H|%ae|%at|%s", "--numstat", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=GIT_LOG_TIMEOUT_SECONDS,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        logger.warning("git-log basarisiz (%s): %s", repo_path, exc)
+        return {}
+
+    if result.returncode != 0:
+        return {}
+
+    head_set   = set(head_files)
+    now        = datetime.now(timezone.utc)
+    now_ts     = now.timestamp()
+    cutoff_ts  = (now - timedelta(days=RECENT_COMMIT_WINDOW_DAYS)).timestamp()
+
+    file_stats: dict[str, dict] = {
+        f: {
+            "commit_count": 0,
+            "bug_count":    0,
+            "authors":      set(),
+            "timestamps":   [],
+            "churns":       [],
+        }
+        for f in head_files
+    }
+
+    current_is_bug = False
+    current_ts     = 0
+    current_author = ""
+
+    for line in result.stdout.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.startswith("COMMIT|"):
+            parts = line.split("|", 4)
+            if len(parts) >= 4:
+                current_author = parts[2] if len(parts) > 2 else ""
+                try:
+                    current_ts = int(parts[3])
+                except (ValueError, IndexError):
+                    current_ts = 0
+                subject = parts[4] if len(parts) > 4 else ""
+                current_is_bug = is_bug_message(subject)
+        else:
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            added_str, deleted_str, fpath = parts
+            if fpath not in head_set:
+                continue
+            st = file_stats.get(fpath)
+            if st is None:
+                continue
+            st["commit_count"] += 1
+            if current_is_bug:
+                st["bug_count"] += 1
+            st["authors"].add(current_author)
+            st["timestamps"].append(current_ts)
+            try:
+                st["churns"].append(int(added_str) + int(deleted_str))
+            except ValueError:
+                # Binary dosyalar "-" dondurur — gormezden gel
+                pass
+
+    results: dict[str, dict] = {}
+    for fpath, st in file_stats.items():
+        if st["commit_count"] == 0:
+            continue
+        churns     = st["churns"]
+        timestamps = st["timestamps"]
+        oldest     = min(timestamps) if timestamps else now_ts
+        age        = max((now_ts - oldest) / 86400, 0.5)
+        recent     = sum(1 for ts in timestamps if ts >= cutoff_ts)
+        total_ch   = sum(churns) if churns else 0
+        results[fpath] = {
+            "commit_count":         st["commit_count"],
+            "bug_count":            st["bug_count"],
+            "n_authors":            len(st["authors"]),
+            "file_age_days":        round(age, 1),
+            "churn_total":          total_ch,
+            "avg_churn_per_commit": round(total_ch / len(churns), 1) if churns else 0,
+            "max_single_churn":     max(churns) if churns else 0,
+            "recent_commits_90d":   recent,
+        }
+    return results

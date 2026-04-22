@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}MetricHunter — Home{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="card card-raised hero-card">
+    <h1 class="hero-title">GitHub Repository Analysis</h1>
+    <p class="hero-sub">Commit frequency and bug risk prediction for your Python files</p>
+
+    {% if flash_message %}
+    <div class="alert alert-warn" role="alert">{{ flash_message }}</div>
+    {% endif %}
+
+    {% if not models_ready %}
+    <div class="alert alert-warn" role="alert">
+      <strong>Models not ready.</strong>
+      Please run <code>train_final.ipynb</code> first.
+    </div>
+    {% endif %}
+
+    {% if not github_token_ok %}
+    <div class="alert alert-token" role="alert">
+      <strong>GitHub Token not configured.</strong>
+      On large repositories or repeated analyses, the API rate limit (60 requests/hour) may be exceeded.
+      <span class="token-hint">
+        Solution: add a token via the <strong>Token</strong> button in the top right.
+      </span>
+    </div>
+    {% endif %}
+
+    <form id="analyzeForm" class="analyze-form" autocomplete="off" novalidate>
+      <div class="form-field">
+        <label for="repoUrl" class="form-label">GitHub Repository URL</label>
+        <div class="input-group">
+          <input
+            type="url"
+            id="repoUrl"
+            name="url"
+            class="input-neumorphic"
+            placeholder="https://github.com/user/repo"
+            aria-describedby="urlHint urlError"
+            aria-required="true"
+            {% if not models_ready %}disabled aria-disabled="true"{% endif %}
+          />
+          <button
+            type="submit"
+            id="submitBtn"
+            class="btn btn-primary"
+            {% if not models_ready %}disabled{% endif %}
+          >
+            Analyze
+          </button>
+        </div>
+        <p id="urlHint" class="input-hint">Example: https://github.com/pallets/flask</p>
+        <p id="urlError" class="input-error hidden" role="alert" aria-live="polite"></p>
+      </div>
+    </form>
+
+    <div id="progressSection"
+         class="progress-section hidden"
+         aria-live="polite"
+         aria-atomic="true">
+      <div class="progress-label">
+        <span id="progressMsg">Starting...</span>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-track"
+           role="progressbar"
+           aria-valuenow="0"
+           aria-valuemin="0"
+           aria-valuemax="100"
+           aria-label="Analysis progress">
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div id="errorBox"
+         class="alert alert-error hidden"
+         role="alert"
+         aria-live="assertive"></div>
+  </div>
+
+  <div class="info-row" aria-label="Model information">
+    <div class="card card-raised info-card">
+      <div class="info-icon-text" aria-hidden="true">RF</div>
+      <div class="info-label">Commit Prediction</div>
+      <div class="info-val">Random Forest</div>
+      <div class="info-score">F1 = 0.654</div>
+    </div>
+    <div class="card card-raised info-card">
+      <div class="info-icon-text" aria-hidden="true">ST</div>
+      <div class="info-label">Bug Prediction</div>
+      <div class="info-val">Stacking RF + AutoGluon</div>
+      <div class="info-score">F1 = 0.823</div>
+    </div>
+    <div class="card card-raised info-card">
+      <div class="info-icon-text" aria-hidden="true">36</div>
+      <div class="info-label">Feature Count</div>
+      <div class="info-val">36 features</div>
+      <div class="info-score">Radon + Git + Project</div>
+    </div>
+  </div>
+</div>
+
+{# Pass JS variables safely via Jinja tojson #}
+{% if pending_task %}
+<script>window._pendingTask = {{ pending_task | tojson }};</script>
+{% endif %}
+{% if flash_message %}
+<script>window._flashMessage = {{ flash_message | tojson }};</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

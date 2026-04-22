@@ -1,0 +1,21 @@
+# MetricHunter V2 — Flask runtime (production minimum).
+# Bu dosya sadece uygulamayi ayakta tutmak icin gereken paketler.
+# Pipeline / analiz / test icin requirements-dev.txt kullanin.
+
+flask==3.1.0
+requests>=2.31
+
+# Statik metrikler
+radon==6.0.1
+
+# ML tahmini
+joblib==1.3.2
+scikit-learn==1.7.2
+numpy>=1.26
+pandas==2.3.3
+
+# AutoGluon Python 3.10.6'da egitilmis artefaktlar (require_py_version_match=False)
+autogluon==1.5.0
+
+# Parquet okuma (autogluon dolayli indirir, ama acik pin bagimlilik zinciri icin)
+pyarrow>=14

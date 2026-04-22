@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}MetricHunter{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  {% block head %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=9" />
+</head>
+<body>
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <a href="{{ url_for('main.index') }}" class="navbar-brand">
+      <span class="brand-mark" aria-hidden="true">MH</span>
+      MetricHunter
+    </a>
+    <span class="navbar-sub">Commit &amp; Bug Prediction Tool</span>
+
+    <button id="tokenNavBtn"
+            class="token-nav-btn"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="tokenPanel"
+            title="GitHub Token settings">
+      <span class="token-nav-dot" id="tokenNavDot" aria-hidden="true"></span>
+      <span class="token-nav-label">Token</span>
+    </button>
+  </nav>
+
+  <!-- Token settings panel -->
+  <div id="tokenPanel"
+       class="token-panel hidden"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="tokenPanelTitle">
+    <div class="token-panel-inner card card-raised">
+      <div class="token-panel-header">
+        <h3 class="token-panel-title" id="tokenPanelTitle">GitHub API Token</h3>
+        <button id="tokenPanelClose"
+                class="token-panel-close"
+                aria-label="Close panel">&times;</button>
+      </div>
+
+      <!-- Status box -->
+      <div id="tokenStatusBox" class="token-status-box">
+        <div class="token-status-loading">Checking...</div>
+      </div>
+
+      <!-- Input form -->
+      <div class="token-form">
+        <label for="tokenInput" class="form-label">Enter New Token</label>
+        <div class="token-input-row">
+          <input
+            type="password"
+            id="tokenInput"
+            class="input-neumorphic"
+            placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="tokenToggleBtn"
+                  class="btn-icon"
+                  type="button"
+                  title="Show / Hide"
+                  aria-label="Show or hide token">
+            <span id="tokenToggleIcon">&#9679;</span>
+          </button>
+        </div>
+        <p class="input-error hidden" id="tokenInputError" role="alert"></p>
+
+        <div class="token-actions">
+          <button id="tokenSaveBtn" class="btn btn-primary">Save &amp; Verify</button>
+          <button id="tokenClearBtn" class="btn btn-secondary">Clear</button>
+        </div>
+      </div>
+
+      <p class="token-help">
+        No token?
+        <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=MetricHunter"
+           target="_blank"
+           rel="noopener noreferrer">
+          Create one on GitHub
+        </a>
+        &mdash; <em>public_repo</em> scope is sufficient.
+      </p>
+    </div>
+  </div>
+
+  <!-- Panel backdrop (click to close) -->
+  <div id="tokenOverlay" class="token-overlay hidden" aria-hidden="true"></div>
+
+  <main class="main-container" id="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer" role="contentinfo">
+    <span>MetricHunter &mdash; AutoGluon + Random Forest &mdash; 2026</span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/token.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

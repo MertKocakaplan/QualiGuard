@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}MetricHunter — Results{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dataTables.min.css') }}" />
+{% endblock %}
+
+{% block content %}
+{% set info    = result.get("project_info", {}) if result else {} %}
+{% set summary = result.get("summary", {})      if result else {} %}
+{% set files   = result.get("files", [])        if result else [] %}
+{% set err     = result.get("error")            if result else "Result data unavailable." %}
+{% set total   = [summary.get("total_files", 0), 1] | max %}
+
+{% if err %}
+{# ── Error screen ─────────────────────────────────────── #}
+<div class="card card-raised error-card" role="alert">
+  <h2 class="error-heading">Analysis Failed</h2>
+  <p class="error-msg">{{ err }}</p>
+
+  {% if result and result.get("github_url") %}
+  <p class="error-url">
+    Analyzed URL:
+    <span class="code-text">{{ result.github_url }}</span>
+  </p>
+  {% endif %}
+
+  {% if result and result.get("error_detail") %}
+  <details class="error-details">
+    <summary>Technical details</summary>
+    <pre class="error-pre">{{ result.error_detail }}</pre>
+  </details>
+  {% endif %}
+
+  <div class="error-actions">
+    <a href="{{ url_for('main.index') }}" class="btn btn-primary">Go Back</a>
+  </div>
+</div>
+
+{% elif not files %}
+{# ── Empty result screen ──────────────────────────────── #}
+<div class="card card-raised error-card" role="alert">
+  <h2 class="error-heading">No Results Found</h2>
+  <p class="error-msg">Analysis completed but no predictions were generated for any file.</p>
+  <div class="error-actions">
+    <a href="{{ url_for('main.index') }}" class="btn btn-primary">Go Back</a>
+  </div>
+</div>
+
+{% else %}
+{# ── Success screen ────────────────────────────────────── #}
+
+<div class="results-header">
+  <div class="results-header-text">
+    <h2 class="results-title">
+      {% if result.github_url %}
+      <a href="{{ result.github_url }}" target="_blank" rel="noopener noreferrer" class="repo-link">
+        {{ result.repo_name or result.github_url }}
+      </a>
+      {% else %}
+      {{ result.repo_name or "Repo" }}
+      {% endif %}
+    </h2>
+    {% if result.github_url %}
+    <span class="results-sub">{{ result.github_url }}</span>
+    {% endif %}
+  </div>
+  <a href="{{ url_for('main.index') }}" class="btn btn-secondary">New Analysis</a>
+</div>
+
+{# Project stat cards #}
+<div class="stat-row" aria-label="Project statistics">
+  <div class="card card-raised stat-card">
+    <div class="stat-label">Stars</div>
+    <div class="stat-val">{{ info.get("stars", 0) | int | format_number }}</div>
+  </div>
+  <div class="card card-raised stat-card">
+    <div class="stat-label">Contributors</div>
+    <div class="stat-val">{{ info.get("contributor_count", 1) }}</div>
+  </div>
+  <div class="card card-raised stat-card">
+    <div class="stat-label">Project Age</div>
+    <div class="stat-val">
+      {{ info.get("project_age_days", 0) }}
+      <span class="stat-unit">days</span>
+    </div>
+  </div>
+  <div class="card card-raised stat-card">
+    <div class="stat-label">Analyzed Files</div>
+    <div class="stat-val">{{ summary.get("total_files", 0) }}</div>
+  </div>
+</div>
+
+{# Risk summary cards #}
+<div class="risk-row" aria-label="Risk summary">
+  <div class="card card-inset risk-card risk-commit">
+    <div class="risk-num">{{ summary.get("high_commit_risk", 0) }}</div>
+    <div class="risk-label">High Commit Risk Files</div>
+    <div class="risk-pct">
+      {{ ((summary.get("high_commit_risk", 0) / total) * 100) | round(1) }}%
+    </div>
+  </div>
+  <div class="card card-inset risk-card risk-bug">
+    <div class="risk-num">{{ summary.get("has_bug_risk", 0) }}</div>
+    <div class="risk-label">Bug Risk Files</div>
+    <div class="risk-pct">
+      {{ ((summary.get("has_bug_risk", 0) / total) * 100) | round(1) }}%
+    </div>
+  </div>
+</div>
+
+{# Main results table #}
+<div class="card card-raised table-card">
+  <div class="table-header">
+    <h3 class="table-title">File-level Predictions</h3>
+    <span class="table-count">{{ files | length }} files</span>
+  </div>
+  <div class="table-wrapper">
+    <table id="resultsTable" class="display" style="width:100%"
+           aria-label="File prediction results">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>LOC</th>
+          <th>CC Avg.</th>
+          <th>MI</th>
+          <th>Commit Risk</th>
+          <th>Commit Prob.</th>
+          <th>Bug Risk</th>
+          <th>Bug Prob.</th>
+          {# Hidden sort columns: 8=commit_pred 9=commit_prob 10=bug_pred 11=bug_prob #}
+          <th></th><th></th><th></th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in files %}
+        {% set commit_pct = (f.commit_prob * 100) | round(1) %}
+        {% set bug_pct    = (f.bug_prob    * 100) | round(1) %}
+        {% if f.bug_pred == 1 and f.commit_pred == 1 %}
+          {% set row_cls = "row-both" %}
+        {% elif f.bug_pred == 1 %}
+          {% set row_cls = "row-bug" %}
+        {% elif f.commit_pred == 1 %}
+          {% set row_cls = "row-commit" %}
+        {% else %}
+          {% set row_cls = "" %}
+        {% endif %}
+        <tr class="{{ row_cls }}">
+
+          <td class="file-cell" title="{{ f.file_path }}">
+            {{ f.file_path | truncate_path }}
+          </td>
+          <td>{{ f.loc }}</td>
+          <td>{{ f.cc_mean }}</td>
+          <td>{{ f.maintainability_index }}</td>
+
+          <td class="dt-center">
+            {% if f.commit_pred == 1 %}
+              <span class="badge badge-high">High</span>
+            {% else %}
+              <span class="badge badge-low">Low</span>
+            {% endif %}
+          </td>
+
+          <td>
+            <div class="prob-wrap">
+              <div class="prob-track"
+                   role="progressbar"
+                   aria-valuenow="{{ commit_pct }}"
+                   aria-valuemin="0"
+                   aria-valuemax="100"
+                   aria-label="Commit probability {{ commit_pct }}%">
+                <div class="prob-bar prob-bar-commit"
+                     style="width:{{ commit_pct }}%"></div>
+              </div>
+              <span class="prob-txt">{{ commit_pct }}%</span>
+            </div>
+          </td>
+
+          <td class="dt-center">
+            {% if f.bug_pred == 1 %}
+              <span class="badge badge-bug">Bug</span>
+            {% else %}
+              <span class="badge badge-safe">Clean</span>
+            {% endif %}
+          </td>
+
+          <td>
+            <div class="prob-wrap">
+              <div class="prob-track"
+                   role="progressbar"
+                   aria-valuenow="{{ bug_pct }}"
+                   aria-valuemin="0"
+                   aria-valuemax="100"
+                   aria-label="Bug probability {{ bug_pct }}%">
+                <div class="prob-bar prob-bar-bug"
+                     style="width:{{ bug_pct }}%"></div>
+              </div>
+              <span class="prob-txt">{{ bug_pct }}%</span>
+            </div>
+          </td>
+
+          {# Hidden numeric columns — DataTables reads these for sorting #}
+          <td>{{ f.commit_pred }}</td>
+          <td>{{ f.commit_prob }}</td>
+          <td>{{ f.bug_pred }}</td>
+          <td>{{ f.bug_prob }}</td>
+
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% if result and result.get("files") %}
+<script>
+$(document).ready(function () {
+  $("#resultsTable").DataTable({
+    pageLength: 25,
+    order: [[11, "desc"]],
+    language: {
+      search:            "Search:",
+      searchPlaceholder: "Search files...",
+      lengthMenu:        "Show _MENU_ entries",
+      info:              "Showing _START_\u2013_END_ of _TOTAL_ files",
+      infoEmpty:         "No records",
+      infoFiltered:      "(filtered from _MAX_ total)",
+      paginate:          { previous: "Previous", next: "Next" },
+      zeroRecords:       "No matching files found",
+      emptyTable:        "No data available",
+      loadingRecords:    "Loading..."
+    },
+    columnDefs: [
+      { targets: [0],          className: "file-col"            },
+      { targets: [1, 2, 3],    type: "num"                      },
+      { targets: [8,9,10,11],  visible: false, type: "num"      },
+      { targets: [4],          orderData: [8]                   },
+      { targets: [5],          orderData: [9],  type: "num-fmt" },
+      { targets: [6],          orderData: [10]                  },
+      { targets: [7],          orderData: [11], type: "num-fmt" }
+    ],
+    dom: '<"dt-top"lf>rt<"dt-bottom"ip>',
+    autoWidth: false,
+    stateSave: false
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

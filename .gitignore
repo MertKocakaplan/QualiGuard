@@ -1,0 +1,48 @@
+# MetricHunter V2 — ignore patterns.
+
+# Runtime ciktilari
+output/
+repos/
+*.log
+
+# Model artifactlari (egitim sonrasi regenere edilir)
+models/*.joblib
+models/bug_ag_base/
+models/smell_*.joblib
+models/scaler_*.joblib
+models/project_stats.json
+# feature_names.json repo'da kalir — kodun beklentisi.
+!models/feature_names.json
+
+# Parquet / csv veri
+*.parquet
+*.csv.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Sanal ortamlar
+venv/
+.venv/
+env/
+
+# VS Code — settings.json commit edilir, launch.json lokal
+.vscode/launch.json
+.vscode/*.local.json
+
+# Sirlar
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
