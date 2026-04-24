@@ -14,6 +14,14 @@ ipykernel>=6.29
 # Plotlar (F4/F5)
 matplotlib>=3.8
 
+# F5 modelleme
+imbalanced-learn>=0.11
+xgboost>=2.0
+lightgbm>=4.1
+# autogluon ve tensorflow opsiyonel — ortama gore elle kurun
+# autogluon.tabular>=1.1
+# tensorflow>=2.15
+
 # Progress bar
 tqdm>=4.66
 

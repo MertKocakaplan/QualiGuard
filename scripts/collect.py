@@ -5,11 +5,14 @@ CLI contract (PLAN §12.1):
 
     python -m scripts.collect [OPTIONS]
 
-F1 kapsami:
-    - Argparse + logging + ortam kurulumu
-    - --dry-run: config'i rapor et, hicbir sey yazma
-    - --phase discovery: 10 projelik mini discovery (dogrulama)
-    - --phase process / build / all: F2+F3'te tamamlanir
+Fazlar:
+    - discovery → GitHub search + contributor filter + output/checkpoints/discovery.json
+    - process   → her proje icin clone + radon + git + SZZ + prospector
+                  → output/projects/<safe>.parquet (atomic)
+                  → output/checkpoints/processed_projects.json
+    - build     → tum per-project parquet'leri birlestir
+                  → output/dataset_full_<ts>.parquet
+    - all       → sirayla discovery + process + build
 
 Exit codes (PLAN §12.1):
     0   basarili
@@ -20,15 +23,18 @@ Exit codes (PLAN §12.1):
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
 from pipeline import checkpoint as checkpoint_mod
-from pipeline import discovery
+from pipeline import dataset_builder, discovery, project_processor
 from pipeline.config import (
+    CHECKPOINT_DIR,
     DEFAULT_MAX_AGE_DAYS,
     DEFAULT_MAX_CONTRIBUTORS,
     DEFAULT_MIN_AGE_DAYS,
@@ -141,7 +147,7 @@ def _print_dry_run(args: argparse.Namespace) -> None:
 
 
 def _run_discovery(args: argparse.Namespace) -> int:
-    """Discovery fazini calistir. F2+F3'te process/build eklenir."""
+    """Discovery fazi — GitHub search + contributor filter."""
     refresh_quota()
     quota = current_quota()
     logger.info("GitHub quota: %s", quota)
@@ -154,6 +160,118 @@ def _run_discovery(args: argparse.Namespace) -> int:
         min_stars=args.min_stars,
     )
     logger.info("discovery sonucu: %d proje", len(found))
+    return 0
+
+
+def _load_discovered_projects() -> list[dict]:
+    """discovery.json'dan bulunan proje listesini oku. Yoksa [] doner."""
+    path = CHECKPOINT_DIR / "discovery.json"
+    if not path.exists():
+        logger.error("discovery.json yok: %s (once --phase discovery calistir)", path)
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("discovery.json okunamadi: %s", exc)
+        return []
+    return list(data.get("found", []))
+
+
+def _run_process(args: argparse.Namespace) -> int:
+    """
+    Process fazi — her proje icin full hat calistir.
+
+    - discovery.json'dan proje listesini al
+    - --resume aktifse processed_projects'teki status=ok'lari atla
+    - pipeline.project_processor.process_project ile isle
+    - her proje sonrasi checkpoint.mark_project_done (atomic)
+    - KeyboardInterrupt yakalanir, son checkpoint'ten devam edilebilir
+    """
+    projects = _load_discovered_projects()
+    if not projects:
+        return 1
+
+    processed = checkpoint_mod.get_processed_set() if args.resume else set()
+    total = len(projects)
+    if processed:
+        logger.info("resume aktif — %d proje atlanacak (status=ok)", len(processed))
+
+    stats = {"ok": 0, "failed": 0, "empty": 0, "skipped": 0}
+    t_start = time.monotonic()
+    durations: list[float] = []
+    total_loc = 0
+    total_files = 0
+
+    for idx, proj in enumerate(projects, 1):
+        name = proj.get("full_name", "<noname>")
+
+        if name in processed:
+            stats["skipped"] += 1
+            continue
+
+        logger.info("[%d/%d] proje: %s", idx, total, name)
+        try:
+            result = project_processor.process_project(
+                proj,
+                skip_szz=args.skip_szz,
+                skip_prospector=args.skip_prospector,
+                workers=args.workers,
+            )
+        except KeyboardInterrupt:
+            logger.warning("SIGINT — ara ciktida. Devam icin --resume kullan.")
+            return 130
+        except Exception as exc:  # noqa: BLE001 — her proje bagimsiz
+            logger.exception("proje patladi: %s", name)
+            result = {
+                "status":       "failed",
+                "error":        f"unhandled: {exc}",
+                "completed_at": datetime.now().isoformat(),
+            }
+
+        checkpoint_mod.mark_project_done(name, result)
+        status = result.get("status", "failed")
+        stats[status] = stats.get(status, 0) + 1
+        if "duration_secs" in result:
+            durations.append(float(result["duration_secs"]))
+        total_loc   += int(result.get("total_loc", 0) or 0)
+        total_files += int(result.get("files", 0) or 0)
+
+        # Periyodik progress
+        if idx % 10 == 0:
+            logger.info(
+                "progress %d/%d — ok=%d failed=%d empty=%d skipped=%d",
+                idx, total, stats["ok"], stats["failed"],
+                stats["empty"], stats["skipped"],
+            )
+
+    # Ozet (PLAN F3 DoD: toplam LOC, proje sayisi, basari orani, ortalama sure)
+    elapsed    = round(time.monotonic() - t_start, 1)
+    avg        = round(sum(durations) / len(durations), 1) if durations else 0.0
+    attempted  = total - stats["skipped"]
+    success_pc = (stats["ok"] / attempted * 100.0) if attempted else 0.0
+    fail_ratio = (stats["failed"] / attempted) if attempted else 0.0
+    logger.info(
+        "process ozeti: total=%d ok=%d failed=%d empty=%d skipped=%d  "
+        "(success %.1f%%, elapsed %.1fs, avg/proj %.1fs)",
+        total, stats["ok"], stats["failed"], stats["empty"], stats["skipped"],
+        success_pc, elapsed, avg,
+    )
+    logger.info(
+        "veri ozeti: toplam_dosya=%d toplam_loc=%d  (yalnizca status=ok projelerden)",
+        total_files, total_loc,
+    )
+    if attempted and fail_ratio > 0.10:
+        logger.warning("failed orani >%%10 — log'u incele.")
+    return 0
+
+
+def _run_build(args: argparse.Namespace) -> int:
+    """Build fazi — per-project parquet'leri birlestir."""
+    out = dataset_builder.build_full_dataset(output_dir=args.output_dir)
+    if out is None:
+        logger.error("build: birlestirilecek parquet yok")
+        return 1
+    logger.info("build: dataset_full yazildi: %s", out)
     return 0
 
 
@@ -185,14 +303,14 @@ def main(argv: list[str] | None = None) -> int:
                 return rc
 
         if args.phase in ("process", "all"):
-            logger.warning("phase=process F2'de implement edilecek (SZZ + Prospector).")
-            if args.phase == "process":
-                return 1
+            rc = _run_process(args)
+            if rc != 0:
+                return rc
 
         if args.phase in ("build", "all"):
-            logger.warning("phase=build F3'te implement edilecek (dataset_full birlesimi).")
-            if args.phase == "build":
-                return 1
+            rc = _run_build(args)
+            if rc != 0:
+                return rc
 
         logger.info("scripts.collect tamamlandi.")
         return 0

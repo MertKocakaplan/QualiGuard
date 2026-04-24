@@ -53,6 +53,16 @@ BUG_KEYWORDS = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+REFACTOR_KEYWORDS = re.compile(
+    r"\b("
+    r"refactor(ed|ing|s)?|cleanup|clean.?up|"
+    r"rename(d|s|ing)?|reorganiz(e|ed|ing)|restructur(e|ed|ing)|"
+    r"simplif(y|ied|ies|ying)|extract(ed|ing)?|inline(d|s)?|"
+    r"tidy(ing)?|reformat(ted|ting)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 # ── Public API ───────────────────────────────────────────────────
 
@@ -64,6 +74,83 @@ def should_skip_file(file_path: str) -> bool:
 def is_bug_message(commit_message: str) -> bool:
     """Commit mesaji bug anahtar kelimelerini icerir mi?"""
     return bool(BUG_KEYWORDS.search(commit_message or ""))
+
+
+def is_refactor_message(commit_message: str) -> bool:
+    """Commit mesaji refactor/cleanup anahtar kelimelerini icerir mi?"""
+    return bool(REFACTOR_KEYWORDS.search(commit_message or ""))
+
+
+def get_repo_commit_summary(
+    repo_path: Path,
+    timeout: int = GIT_LOG_TIMEOUT_SECONDS,
+) -> dict[str, int]:
+    """
+    Repo-level commit ozeti — PLAN §17.1 Project Health kartlari icin.
+
+    `git log --pretty=format:%at|%s` cikisini okur, bug ve refactor
+    commit'lerini sayar, son `RECENT_COMMIT_WINDOW_DAYS` icindekini
+    da dondurur.
+
+    Hata / timeout / bos repo -> tum degerler 0.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--pretty=format:%at|%s", "HEAD"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        logger.warning("get_repo_commit_summary basarisiz (%s): %s", repo_path, exc)
+        return {
+            "total_commits":      0,
+            "bug_fix_commits":    0,
+            "refactor_commits":   0,
+            "recent_commits_90d": 0,
+        }
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return {
+            "total_commits":      0,
+            "bug_fix_commits":    0,
+            "refactor_commits":   0,
+            "recent_commits_90d": 0,
+        }
+
+    now       = datetime.now(timezone.utc)
+    cutoff_ts = (now - timedelta(days=RECENT_COMMIT_WINDOW_DAYS)).timestamp()
+
+    total    = 0
+    bugs     = 0
+    refacs   = 0
+    recent   = 0
+
+    for line in result.stdout.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        ts_str, _, subject = line.partition("|")
+        total += 1
+        if is_bug_message(subject):
+            bugs += 1
+        if is_refactor_message(subject):
+            refacs += 1
+        try:
+            if int(ts_str) >= cutoff_ts:
+                recent += 1
+        except ValueError:
+            pass
+
+    return {
+        "total_commits":      total,
+        "bug_fix_commits":    bugs,
+        "refactor_commits":   refacs,
+        "recent_commits_90d": recent,
+    }
 
 
 def get_head_python_files(repo_path: Path) -> list[str]:
