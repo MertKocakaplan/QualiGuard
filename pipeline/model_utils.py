@@ -1,27 +1,111 @@
 """
-model_utils.py — Split, scaler ve metric yardimcilari.
+model_utils.py — Split, scaler, SMOTE ve metric yardimcilari.
 
-F1 iskeleti — F5/F6'da genisletilir. Sadece temel imzalari yaziyoruz
-ki `from pipeline.model_utils import ...` calissin.
+PLAN §3.11 + §4.3 F5 kapsami: ablation harness'i icin kullanilir.
+Hafif yardimcilar — sklearn + numpy/pandas disinda zorunlu bagimlilik yok.
+SMOTE opsiyoneldir; `imbalanced-learn` kurulu degilse `apply_smote_train_only`
+`ImportError` firlatir.
 """
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
+    confusion_matrix,
     f1_score,
     matthews_corrcoef,
+    precision_recall_curve,
 )
 from sklearn.model_selection import GroupKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from pipeline.config import FEATURES_BUG, FEATURES_COMMIT, FEATURES_PROCESS
+
 logger = logging.getLogger(__name__)
 
+
+# ── Feature set secimi (ablation) ────────────────────────────────
+
+# Radon raw (22)
+STATIC_FEATURES: tuple[str, ...] = (
+    "loc", "lloc", "sloc", "comments", "multi", "blank", "single_comments",
+    "cc_mean", "cc_max", "cc_total", "num_functions",
+    "h_vocabulary", "h_length", "h_volume", "h_difficulty",
+    "h_effort", "h_bugs", "h_time", "h_calculated_length",
+    "maintainability_index",
+    "comment_ratio", "doc_ratio",
+)
+
+# Derived (+4)
+DERIVED_FEATURES: tuple[str, ...] = (
+    "complexity_density", "comment_per_function",
+    "avg_function_length", "effort_per_line",
+)
+
+# Proje meta (+3)
+PROJECT_META_FEATURES: tuple[str, ...] = (
+    "stars", "contributor_count", "project_age_days",
+)
+
+# Process metrics (bug_count haric, data leakage riski)
+PROCESS_FEATURES_SAFE: tuple[str, ...] = tuple(
+    f for f in FEATURES_PROCESS if f != "bug_count"
+)
+
+
+def get_feature_set(task: str, variant: str) -> tuple[str, ...]:
+    """
+    Ablation icin feature seti secimi.
+
+    Args:
+        task: "commit" | "bug" | "smell"
+        variant: "static" | "derived" | "process" | "all"
+
+    Returns:
+        Sutun isimlerinin tuple'i. Variant "all" icin task'a gore
+        `FEATURES_COMMIT` (29) ya da `FEATURES_BUG` (36) doner.
+    """
+    task = task.lower()
+    variant = variant.lower()
+    if task not in ("commit", "bug", "smell"):
+        raise ValueError(f"Gecersiz task: {task}")
+    if variant == "static":
+        return STATIC_FEATURES
+    if variant == "derived":
+        return STATIC_FEATURES + DERIVED_FEATURES
+    if variant == "process":
+        # Static + Derived + Proje meta (T1 'all' ile esdeger)
+        return STATIC_FEATURES + DERIVED_FEATURES + PROJECT_META_FEATURES
+    if variant == "all":
+        return FEATURES_COMMIT if task == "commit" else FEATURES_BUG
+    raise ValueError(f"Gecersiz variant: {variant}")
+
+
+def extract_xy(
+    df: pd.DataFrame,
+    features: Sequence[str],
+    label_col: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    DataFrame -> (X, y). Eksik sutunlar NaN ile doldurulur, sonra NaN'lar 0.0.
+    Caller olmamasi gereken sutunlari `features`'ten cikarir.
+    """
+    if label_col not in df.columns:
+        raise KeyError(f"Etiket sutunu yok: {label_col}")
+    missing = [c for c in features if c not in df.columns]
+    if missing:
+        raise KeyError(f"Eksik feature sutunu: {missing}")
+    X = df[list(features)].to_numpy(dtype="float64", copy=True, na_value=0.0)
+    y = df[label_col].to_numpy(dtype="int64", copy=True)
+    return X, y
+
+
+# ── Split'ler ─────────────────────────────────────────────────────
 
 def project_based_split(
     df: pd.DataFrame,
@@ -39,7 +123,7 @@ def project_based_split(
     if project_col not in df.columns:
         raise ValueError(f"Sutun bulunamadi: {project_col}")
 
-    projects = df[project_col].unique()
+    projects = df[project_col].unique().copy()
     rng = np.random.default_rng(random_state)
     rng.shuffle(projects)
 
@@ -56,6 +140,41 @@ def project_based_split(
     return train_df, val_df, test_df
 
 
+def time_based_split(
+    df: pd.DataFrame,
+    time_col: str = "created_at",
+    test_size: float = 0.15,
+    val_size: float = 0.15,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Kronolojik 70/15/15 split. `time_col` datetime'a parse edilebilir olmali.
+
+    Tarihe gore sirali: erken -> train, orta -> val, gec -> test.
+    Robustness raporlari (project-based'le karsilastirma) icin secondary.
+
+    Returns:
+        (train_df, val_df, test_df)
+    """
+    if time_col not in df.columns:
+        raise ValueError(f"Sutun bulunamadi: {time_col}")
+    work = df.copy()
+    work["_ts"] = pd.to_datetime(work[time_col], utc=True, errors="coerce")
+    # NaT'lari en sona at (deterministik davranis)
+    work = work.sort_values("_ts", kind="stable", na_position="last").reset_index(drop=True)
+
+    n = len(work)
+    n_test = int(round(n * test_size))
+    n_val  = int(round(n * val_size))
+    n_train = n - n_test - n_val
+    if n_train < 0:
+        raise ValueError("val_size + test_size 1.0'i asamaz")
+
+    train_df = work.iloc[:n_train].drop(columns="_ts").copy()
+    val_df   = work.iloc[n_train:n_train + n_val].drop(columns="_ts").copy()
+    test_df  = work.iloc[n_train + n_val:].drop(columns="_ts").copy()
+    return train_df, val_df, test_df
+
+
 def group_kfold_indices(
     df: pd.DataFrame,
     group_col: str = "project_name",
@@ -66,12 +185,37 @@ def group_kfold_indices(
     return gkf.split(df, groups=df[group_col].values)
 
 
+# ── Scaler + SMOTE ────────────────────────────────────────────────
+
 def fit_scaler(X: np.ndarray) -> StandardScaler:
     """StandardScaler fit — train icin kullan, val/test icin transform."""
     scaler = StandardScaler()
     scaler.fit(X)
     return scaler
 
+
+def apply_smote_train_only(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    random_state: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    SMOTE'u SADECE train fold'unda uygula. val/test verisine dokunma.
+
+    Tek sinifli veya yetersiz ornek durumunda `imblearn` hata firlatir;
+    caller bu durumda orjinali kullanmayi tercih edebilir.
+
+    Raises:
+        ImportError: `imbalanced-learn` kurulu degilse.
+    """
+    from imblearn.over_sampling import SMOTE  # type: ignore[import-not-found]
+
+    sm = SMOTE(random_state=random_state)
+    X_res, y_res = sm.fit_resample(X_train, y_train)
+    return X_res, y_res
+
+
+# ── Metrics ───────────────────────────────────────────────────────
 
 def classification_metrics(
     y_true: np.ndarray,
@@ -89,9 +233,30 @@ def classification_metrics(
             out["pr_auc"] = float(average_precision_score(y_true, y_proba))
         except ValueError:
             out["pr_auc"] = float("nan")
+    else:
+        out["pr_auc"] = float("nan")
     return out
 
 
-# Plain shim — sklearn'un train_test_split'i tek cagri ile cozer.
-# Ama caller flat veri kullanirsa bu daha kolay:
+def confusion_quadrants(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> dict[str, int]:
+    """tn/fp/fn/tp — 2-sinif. Cok-sinif icin cagirma."""
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel().tolist()
+    return {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)}
+
+
+def pr_curve(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """PR curve: (precision, recall, thresholds)."""
+    return precision_recall_curve(y_true, y_proba)
+
+
+# ── Basit shim'ler ─────────────────────────────────────────────────
+
+# Flat veri icin sklearn'un kendisi en basit yol:
 random_split = train_test_split
