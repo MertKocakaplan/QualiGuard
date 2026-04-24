@@ -833,23 +833,32 @@ Yukarıdakine ek olarak:
 - [ ] Sonuç CSV'leri `output/` altında
 
 ### F6 — Final training
-- [ ] `scripts/train_final.py` 3 görev için çalıştı
-- [ ] `models/` altında tüm artifact'lar mevcut
-- [ ] `project_stats.json` yazıldı
-- [ ] Sanity test: `predictor.load_all()` + tek satır tahmin
+- [x] `scripts/train_final.py` 3 görev için çalıştı
+- [x] `models/` altında tüm artifact'lar mevcut
+- [x] `project_stats.json` yazıldı
+- [x] Sanity test: `predictor.load_all()` + tek satır tahmin
 
-### F7 — Flask V2
-- [ ] `app/predictor.py` 3 fonksiyon export ediyor
-- [ ] `app/analyzer.py` Prospector entegre (opsiyonel bayrak)
-- [ ] Results sayfasında 3 tahmin + yeni paneller render ediliyor
+### F7 — Flask V2 (aktif)
+- [x] `app/predictor.py` 3 fonksiyon export ediyor
+- [x] `app/analyzer.py` Prospector entegre (opsiyonel bayrak)
+- [x] `app/health.py` project health + smell summary hesaplıyor
+- [x] `pipeline/git_metrics.py` repo-level commit özeti (`get_repo_commit_summary`)
+- [x] `routes.py` prospector form flag okuyor, project_stats template'e geçiyor
+- [x] Results sayfasında 3 tahmin + health kartları + smell overview render ediliyor
+- [x] Test setinde F7 uçtan uca: `test_health.py`, `test_git_metrics_summary.py`,
+      `test_analyzer_prospector.py`
 - [ ] Canlı test: bilinen repo üzerinde analiz çalışır
 - [ ] UI responsive hâlâ çalışıyor (mobil layout bozulmadı)
 
-### F8 — Paper + doc
-- [ ] `README.md` güncellendi (setup, usage, yapı)
-- [ ] PLAN.md'ye final sonuçlar eklendi
-- [ ] Makale taslağı güncellendi (yeni RQ'lar, sonuçlar)
-- [ ] CHANGELOG.md yazıldı (V1 → V2)
+### F8 — Paper + doc (aktif)
+- [x] `README.md` güncellendi (setup, usage, yapı, docs pointer, test sayısı)
+- [x] `CHANGELOG.md` yazıldı (V1 → V2) — `v2/CHANGELOG.md`
+- [x] Makale iskeleti oluşturuldu — `docs/paper_outline.md`
+      (RQ stub'ları + placeholder sonuç tabloları; gerçek sayılar kullanıcı
+      pipeline'ı koşturduktan sonra doldurulacak)
+- [ ] PLAN.md'ye final sayısal sonuçlar eklendi (kullanıcı bağımlı — F5
+      ablation + F6 train sonrası)
+- [ ] Makale taslağı nihai sonuçlarla güncellendi (kullanıcı bağımlı)
 
 ---
 
