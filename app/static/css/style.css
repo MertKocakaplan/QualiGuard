@@ -21,6 +21,9 @@
   --success:         #0ea5e9;
   --danger:          #e11d48;
   --warn:            #f59e0b;
+  --smell:           #ea580c;
+  --smell-dk:        #c2410c;
+  --smell-soft:      #fdba74;
   --radius:          12px;
   --radius-sm:       8px;
   --radius-pill:     50px;
@@ -525,6 +528,167 @@ code {
 
 .risk-commit .risk-num { color: var(--accent); }
 .risk-bug    .risk-num { color: var(--danger); }
+.risk-smell  .risk-num { color: var(--smell);  }
+
+/* ── Project health cards ─────────────────────────────────────── */
+
+.health-row {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.8rem;
+}
+
+.health-card {
+  flex: 1;
+  min-width: 200px;
+  text-align: center;
+  padding: 1.3rem 1rem;
+}
+
+.health-label {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.health-val {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--accent-dk);
+}
+
+.health-unit {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-soft);
+  margin-top: 0.25rem;
+}
+
+/* ── Smell overview cards ─────────────────────────────────────── */
+
+.smell-row {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.8rem;
+}
+
+.smell-card {
+  flex: 1;
+  min-width: 200px;
+  text-align: center;
+  padding: 1.3rem 1rem;
+  border-top: 3px solid var(--smell);
+}
+
+.smell-label {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.smell-val {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--smell-dk);
+}
+
+.smell-unit {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-soft);
+  margin-top: 0.25rem;
+}
+
+.smell-card-priority {
+  border-top-color: var(--danger);
+}
+.smell-card-priority .smell-val {
+  color: var(--danger);
+}
+
+.smell-card-top {
+  text-align: left;
+}
+
+.top-smelly-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+}
+.top-smelly-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px dashed var(--sd);
+}
+.top-smelly-list li:last-child { border-bottom: none; }
+.top-smelly-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.top-smelly-count {
+  color: var(--smell-dk);
+  font-weight: 700;
+}
+
+/* ── Home info-card accents ───────────────────────────────────── */
+
+.info-card-commit .info-icon-text { color: var(--accent); }
+.info-card-bug    .info-icon-text { color: var(--danger); }
+.info-card-smell  .info-icon-text { color: var(--smell);  }
+
+/* ── Prospector opt-in toggle ─────────────────────────────────── */
+
+.form-options {
+  margin-top: 1rem;
+}
+
+.option-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-inset-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.option-toggle input[type="checkbox"] {
+  margin-top: 0.25rem;
+  accent-color: var(--smell);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.option-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.option-toggle-text strong {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.option-hint {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
 
 /* ── Table card ───────────────────────────────────────────────── */
 
@@ -689,6 +853,7 @@ table.dataTable tbody tr:hover td {
 .row-bug    td { background: #d6303110 !important; }
 .row-commit td { background: #6c5ce710 !important; }
 .row-both   td { background: #d6303120 !important; }
+.row-smell  td { box-shadow: inset 3px 0 0 var(--smell); }
 
 .row-bug:hover    td { background: #d6303120 !important; }
 .row-commit:hover td { background: #6c5ce720 !important; }
@@ -829,10 +994,24 @@ table.dataTable tbody tr:hover td {
   white-space: nowrap;
 }
 
-.badge-high { background: #6c5ce720; color: var(--accent); }
-.badge-low  { background: #00b89420; color: #007a62; }
-.badge-bug  { background: #d6303120; color: var(--danger); }
-.badge-safe { background: #00b89420; color: #007a62; }
+.badge-high  { background: #6c5ce720; color: var(--accent); }
+.badge-low   { background: #00b89420; color: #007a62; }
+.badge-bug   { background: #d6303120; color: var(--danger); }
+.badge-safe  { background: #00b89420; color: #007a62; }
+.badge-smell { background: #ea580c20; color: var(--smell-dk); }
+.badge-muted { background: #cbd5e140; color: var(--text-soft); }
+
+.prospector-count {
+  display: inline-block;
+  min-width: 1.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: #ea580c15;
+  color: var(--smell-dk);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.muted { color: var(--text-soft); }
 
 /* ── Probability bars ─────────────────────────────────────────── */
 
@@ -864,6 +1043,10 @@ table.dataTable tbody tr:hover td {
 
 .prob-bar-bug {
   background: linear-gradient(90deg, var(--danger), #ff7675);
+}
+
+.prob-bar-smell {
+  background: linear-gradient(90deg, var(--smell), var(--smell-soft));
 }
 
 .prob-txt {
@@ -1286,6 +1469,8 @@ table.dataTable tbody tr:hover td {
 
   .stat-row,
   .risk-row,
+  .health-row,
+  .smell-row,
   .info-row {
     flex-direction: column;
   }

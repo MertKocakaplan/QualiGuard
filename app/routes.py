@@ -240,9 +240,16 @@ def index():
     )
 
 
+def _parse_bool_field(val: str | None) -> bool:
+    if val is None:
+        return False
+    return val.strip().lower() in ("1", "true", "on", "yes", "evet")
+
+
 @bp.route("/analyze", methods=["POST"])
 def analyze():
     url = (request.form.get("url") or "").strip()
+    prospector_enabled = _parse_bool_field(request.form.get("prospector"))
 
     if not url:
         return jsonify({"error": "URL bos birakilamaz."}), 400
@@ -261,7 +268,11 @@ def analyze():
         def cb(pct, msg):
             _set_task(task_id, percent=pct, message=msg)
 
-        result = analyze_repo(url, progress_callback=cb)
+        result = analyze_repo(
+            url,
+            progress_callback=cb,
+            prospector_enabled=prospector_enabled,
+        )
 
         if result.get("error"):
             short_err = result["error"].split("\n")[0][:300]
@@ -320,4 +331,11 @@ def results(task_id):
         )
 
     result = task.get("result") or {}
-    return render_template("results.html", result=result, task_id=task_id)
+    project_stats = predictor.get_project_stats() or {}
+    return render_template(
+        "results.html",
+        result=result,
+        task_id=task_id,
+        project_stats=project_stats,
+        smell_model_available=predictor.smell_available(),
+    )

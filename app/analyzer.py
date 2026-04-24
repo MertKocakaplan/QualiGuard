@@ -3,10 +3,10 @@ analyzer.py — Flask ana analiz akisi.
 
 V2'de agir kod `pipeline.*` modulune tasindi. Bu dosya sadece akisi
 orkestre eder: GitHub info -> clone -> ls-tree -> git log -> radon ->
-ML tahmin.
+(opsiyonel) prospector -> ML tahmin -> health/smell ozet.
 
-Prospector entegrasyonu F7'de eklenir (PLAN §5.2). F1'de sadece
-flag hazir tutulur.
+Prospector aktif ise (PLAN §5.2 opt-in), `pipeline.prospector_runner`
+paralel olarak calisir, `smell_count` UI'de gosterilir.
 """
 from __future__ import annotations
 
@@ -24,11 +24,13 @@ from pipeline.discovery import get_project_info
 from pipeline.git_metrics import (
     get_bulk_git_stats,
     get_head_python_files,
+    get_repo_commit_summary,
     should_skip_file,
 )
 from pipeline.static_metrics import calculate_derived, calculate_metrics
 
 from . import predictor
+from .health import compute_project_health, compute_smell_summary
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ def analyze_repo(
 
         progress_callback(25, f"{len(py_files)} dosya bulundu. Git istatistikleri hesaplaniyor...")
         git_stats = get_bulk_git_stats(repo_path, py_files)
+        commit_summary = get_repo_commit_summary(repo_path)
 
         rows = _compute_per_file_rows(
             repo_path, py_files, project_info, git_stats, progress_callback,
@@ -85,6 +88,11 @@ def analyze_repo(
                 github_url,
                 "Hicbir dosyadan gecerli metrik hesaplanamadi. Dosyalar cok kucuk veya parse edilemez olabilir."
             )
+
+        prospector_results: dict[str, dict] = {}
+        if prospector_enabled:
+            progress_callback(70, f"Prospector calisiyor ({len(rows)} dosya)...")
+            prospector_results = _run_prospector_safe(repo_path, rows)
 
         progress_callback(82, "Tahminler yapiliyor...")
         feature_names = predictor.get_feature_names()
@@ -96,7 +104,6 @@ def analyze_repo(
         df_bug = _prepare_feature_frame(df, feature_names["bug"])
         bug_preds, bug_probs = predictor.predict_bug(df_bug)
 
-        # F7'de: smell + prospector entegrasyonu eklenecek
         smell_preds = None
         smell_probs = None
         if predictor.smell_available() and feature_names.get("smell"):
@@ -108,15 +115,22 @@ def analyze_repo(
             rows, commit_preds, commit_probs,
             bug_preds, bug_probs,
             smell_preds, smell_probs,
+            prospector_results,
         )
         file_results.sort(key=lambda x: x["bug_prob"], reverse=True)
 
+        project_health = compute_project_health(commit_summary, rows)
+        smell_summary  = compute_smell_summary(file_results, rows, prospector_results)
+
         progress_callback(100, "Tamamlandi!")
         return {
-            "project_info": project_info,
-            "github_url":   github_url,
-            "repo_name":    safe_repo_name(github_url),
-            "files":        file_results,
+            "project_info":    project_info,
+            "github_url":      github_url,
+            "repo_name":       safe_repo_name(github_url),
+            "files":           file_results,
+            "project_health":  project_health,
+            "smell_summary":   smell_summary,
+            "prospector_enabled": prospector_enabled,
             "summary": {
                 "total_files":      len(file_results),
                 "high_commit_risk": sum(1 for f in file_results if f["commit_pred"] == 1),
@@ -190,16 +204,51 @@ def _prepare_feature_frame(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return df[cols].fillna(0.0)
 
 
+def _run_prospector_safe(
+    repo_path: Path,
+    rows: list[dict],
+) -> dict[str, dict]:
+    """
+    Prospector'i rows icindeki dosya yollarina uygula.
+
+    Prospector kurulu degilse veya patlarsa bos sozluk dondurur;
+    analiz akisi kesilmez.
+    """
+    try:
+        from pipeline.prospector_runner import run_prospector_batch
+    except ImportError as exc:
+        logger.warning("prospector_runner import edilemedi: %s", exc)
+        return {}
+
+    abs_paths = [repo_path / r["file_path"] for r in rows]
+    try:
+        raw = run_prospector_batch(abs_paths)
+    except Exception as exc:  # noqa: BLE001 — batch cokerse akis devam etsin
+        logger.warning("run_prospector_batch cokti: %s", exc)
+        return {}
+
+    # repo-relative key'e donustur
+    results: dict[str, dict] = {}
+    for row, abs_path in zip(rows, abs_paths):
+        pres = raw.get(abs_path) or raw.get(str(abs_path))
+        if pres:
+            results[row["file_path"]] = pres
+    return results
+
+
 def _assemble_file_results(
     rows: list[dict],
     commit_preds, commit_probs,
     bug_preds, bug_probs,
     smell_preds, smell_probs,
+    prospector_results: Optional[dict[str, dict]] = None,
 ) -> list[dict]:
+    prospector_results = prospector_results or {}
     results = []
     for i, row in enumerate(rows):
+        fpath = row["file_path"]
         entry = {
-            "file_path":             row["file_path"],
+            "file_path":             fpath,
             "commit_pred":           int(commit_preds[i]),
             "commit_prob":           round(float(commit_probs[i]), 4),
             "bug_pred":              int(bug_preds[i]),
@@ -211,6 +260,12 @@ def _assemble_file_results(
         if smell_preds is not None and smell_probs is not None:
             entry["smell_pred"] = int(smell_preds[i])
             entry["smell_prob"] = round(float(smell_probs[i]), 4)
+
+        pres = prospector_results.get(fpath)
+        if pres:
+            cnt = pres.get("smell_count")
+            entry["prospector_count"] = int(cnt) if cnt is not None else None
+            entry["prospector_categories"] = pres.get("categories") or {}
         results.append(entry)
     return results
 
@@ -224,11 +279,14 @@ def _read_file(path: Path) -> Optional[str]:
 
 def _error_result(github_url: str, msg: str) -> dict:
     return {
-        "project_info": {},
-        "github_url":   github_url,
-        "repo_name":    safe_repo_name(github_url),
-        "files":        [],
-        "summary":      {"total_files": 0, "high_commit_risk": 0, "has_bug_risk": 0, "has_smell_risk": 0},
-        "error":        msg,
-        "error_detail": None,
+        "project_info":   {},
+        "github_url":     github_url,
+        "repo_name":      safe_repo_name(github_url),
+        "files":          [],
+        "project_health": {},
+        "smell_summary":  {},
+        "prospector_enabled": False,
+        "summary":        {"total_files": 0, "high_commit_risk": 0, "has_bug_risk": 0, "has_smell_risk": 0},
+        "error":          msg,
+        "error_detail":   None,
     }

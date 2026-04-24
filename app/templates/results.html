@@ -7,11 +7,16 @@
 {% endblock %}
 
 {% block content %}
-{% set info    = result.get("project_info", {}) if result else {} %}
-{% set summary = result.get("summary", {})      if result else {} %}
-{% set files   = result.get("files", [])        if result else [] %}
-{% set err     = result.get("error")            if result else "Result data unavailable." %}
-{% set total   = [summary.get("total_files", 0), 1] | max %}
+{% set info     = result.get("project_info", {})   if result else {} %}
+{% set summary  = result.get("summary", {})        if result else {} %}
+{% set files    = result.get("files", [])          if result else [] %}
+{% set health   = result.get("project_health", {}) if result else {} %}
+{% set smellsum = result.get("smell_summary", {})  if result else {} %}
+{% set err      = result.get("error")              if result else "Result data unavailable." %}
+{% set total    = [summary.get("total_files", 0), 1] | max %}
+{% set prospector_on   = result.get("prospector_enabled") if result else False %}
+{% set show_smell      = smell_model_available %}
+{% set show_prospector = prospector_on and smellsum.get("prospector_enabled") %}
 
 {% if err %}
 {# ── Error screen ─────────────────────────────────────── #}
@@ -108,7 +113,89 @@
       {{ ((summary.get("has_bug_risk", 0) / total) * 100) | round(1) }}%
     </div>
   </div>
+  {% if show_smell %}
+  <div class="card card-inset risk-card risk-smell">
+    <div class="risk-num">{{ summary.get("has_smell_risk", 0) }}</div>
+    <div class="risk-label">Smell Risk Files</div>
+    <div class="risk-pct">
+      {{ ((summary.get("has_smell_risk", 0) / total) * 100) | round(1) }}%
+    </div>
+  </div>
+  {% endif %}
 </div>
+
+{# Project health cards #}
+{% if health %}
+<div class="health-row" aria-label="Project health">
+  <div class="card card-raised health-card">
+    <div class="health-label">Defect Density</div>
+    <div class="health-val">{{ health.get("defect_density_per_kloc", 0) }}</div>
+    <div class="health-unit">bugs / KLOC</div>
+  </div>
+  <div class="card card-raised health-card">
+    <div class="health-label">Refactor Ratio</div>
+    <div class="health-val">
+      {{ (health.get("refactor_ratio", 0) * 100) | round(1) }}<span class="health-unit">%</span>
+    </div>
+    <div class="health-unit">{{ health.get("refactor_commits", 0) }} / {{ health.get("total_commits", 0) }} commits</div>
+  </div>
+  <div class="card card-raised health-card">
+    <div class="health-label">Recent Activity</div>
+    <div class="health-val">{{ health.get("recent_commits_90d", 0) }}</div>
+    <div class="health-unit">commits (last 90 days)</div>
+  </div>
+  <div class="card card-raised health-card">
+    <div class="health-label">Bug-fix Ratio</div>
+    <div class="health-val">
+      {{ (health.get("bug_fix_ratio", 0) * 100) | round(1) }}<span class="health-unit">%</span>
+    </div>
+    <div class="health-unit">{{ health.get("bug_fix_commits", 0) }} bug-fix commits</div>
+  </div>
+</div>
+{% endif %}
+
+{# Smell overview cards — prospector or ML model #}
+{% if show_smell or show_prospector %}
+<div class="smell-row" aria-label="Smell overview">
+  {% if show_prospector %}
+  <div class="card card-raised smell-card">
+    <div class="smell-label">Total Smells (Prospector)</div>
+    <div class="smell-val">{{ smellsum.get("total_smells", 0) }}</div>
+    <div class="smell-unit">density: {{ smellsum.get("smell_density_per_kloc", 0) }} / KLOC</div>
+  </div>
+  {% endif %}
+  {% if show_smell %}
+  <div class="card card-raised smell-card">
+    <div class="smell-label">ML Smell Risk</div>
+    <div class="smell-val">{{ smellsum.get("ml_smell_risk_count", summary.get("has_smell_risk", 0)) }}</div>
+    <div class="smell-unit">files predicted as smelly</div>
+  </div>
+  <div class="card card-raised smell-card smell-card-priority">
+    <div class="smell-label">Refactor Priority</div>
+    <div class="smell-val">{{ smellsum.get("refactor_priority_count", 0) }}</div>
+    <div class="smell-unit">bug + smell overlap</div>
+  </div>
+  {% endif %}
+  {% if show_prospector and smellsum.get("top_smelly_files") %}
+  <div class="card card-raised smell-card smell-card-top">
+    <div class="smell-label">Top Smelly Files</div>
+    <ul class="top-smelly-list">
+      {% for tf in smellsum.get("top_smelly_files", [])[:3] %}
+      <li>
+        <span class="top-smelly-name" title="{{ tf.file_path }}">
+          {{ tf.file_path | truncate_path }}
+        </span>
+        <span class="top-smelly-count">{{ tf.smell_count }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# Visible: File, LOC, CC, MI, Commit Risk, Commit Prob, Bug Risk, Bug Prob, [Smell Risk, Smell Prob], [Prospector] #}
+{% set visible_count = 8 + (2 if show_smell else 0) + (1 if show_prospector else 0) %}
 
 {# Main results table #}
 <div class="card card-raised table-card">
@@ -129,14 +216,25 @@
           <th>Commit Prob.</th>
           <th>Bug Risk</th>
           <th>Bug Prob.</th>
-          {# Hidden sort columns: 8=commit_pred 9=commit_prob 10=bug_pred 11=bug_prob #}
+          {% if show_smell %}
+          <th>Smell Risk</th>
+          <th>Smell Prob.</th>
+          {% endif %}
+          {% if show_prospector %}
+          <th>Prospector</th>
+          {% endif %}
+          {# Hidden sort columns #}
           <th></th><th></th><th></th><th></th>
+          {% if show_smell %}<th></th><th></th>{% endif %}
+          {% if show_prospector %}<th></th>{% endif %}
         </tr>
       </thead>
       <tbody>
         {% for f in files %}
         {% set commit_pct = (f.commit_prob * 100) | round(1) %}
         {% set bug_pct    = (f.bug_prob    * 100) | round(1) %}
+        {% set smell_pct  = ((f.get("smell_prob") or 0) * 100) | round(1) %}
+        {% set row_flags  = [] %}
         {% if f.bug_pred == 1 and f.commit_pred == 1 %}
           {% set row_cls = "row-both" %}
         {% elif f.bug_pred == 1 %}
@@ -145,6 +243,9 @@
           {% set row_cls = "row-commit" %}
         {% else %}
           {% set row_cls = "" %}
+        {% endif %}
+        {% if f.get("smell_pred") == 1 %}
+          {% set row_cls = (row_cls ~ " row-smell").strip() %}
         {% endif %}
         <tr class="{{ row_cls }}">
 
@@ -201,11 +302,61 @@
             </div>
           </td>
 
+          {% if show_smell %}
+          <td class="dt-center">
+            {% if f.get("smell_pred") == 1 %}
+              <span class="badge badge-smell">Smelly</span>
+            {% elif f.get("smell_pred") == 0 %}
+              <span class="badge badge-safe">Clean</span>
+            {% else %}
+              <span class="badge badge-muted">–</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if f.get("smell_prob") is not none %}
+            <div class="prob-wrap">
+              <div class="prob-track"
+                   role="progressbar"
+                   aria-valuenow="{{ smell_pct }}"
+                   aria-valuemin="0"
+                   aria-valuemax="100"
+                   aria-label="Smell probability {{ smell_pct }}%">
+                <div class="prob-bar prob-bar-smell"
+                     style="width:{{ smell_pct }}%"></div>
+              </div>
+              <span class="prob-txt">{{ smell_pct }}%</span>
+            </div>
+            {% else %}
+            <span class="prob-txt muted">–</span>
+            {% endif %}
+          </td>
+          {% endif %}
+
+          {% if show_prospector %}
+          <td class="dt-center">
+            {% if f.get("prospector_count") is not none %}
+              <span class="prospector-count"
+                    title="{{ f.get('prospector_categories') | tojson }}">
+                {{ f.prospector_count }}
+              </span>
+            {% else %}
+              <span class="muted">–</span>
+            {% endif %}
+          </td>
+          {% endif %}
+
           {# Hidden numeric columns — DataTables reads these for sorting #}
           <td>{{ f.commit_pred }}</td>
           <td>{{ f.commit_prob }}</td>
           <td>{{ f.bug_pred }}</td>
           <td>{{ f.bug_prob }}</td>
+          {% if show_smell %}
+          <td>{{ f.get("smell_pred", -1) }}</td>
+          <td>{{ f.get("smell_prob", 0) }}</td>
+          {% endif %}
+          {% if show_prospector %}
+          <td>{{ f.get("prospector_count", -1) }}</td>
+          {% endif %}
 
         </tr>
         {% endfor %}
@@ -224,9 +375,56 @@
 {% if result and result.get("files") %}
 <script>
 $(document).ready(function () {
+  var visibleCount   = {{ visible_count }};
+  var showSmell      = {{ 'true' if show_smell else 'false' }};
+  var showProspector = {{ 'true' if show_prospector else 'false' }};
+
+  // Hidden indices follow visible columns in order:
+  // commit_pred, commit_prob, bug_pred, bug_prob, [smell_pred, smell_prob], [prospector_count]
+  var hiddenStart    = visibleCount;
+  var iCommitPred    = hiddenStart;
+  var iCommitProb    = hiddenStart + 1;
+  var iBugPred       = hiddenStart + 2;
+  var iBugProb       = hiddenStart + 3;
+  var iSmellPred     = showSmell ? hiddenStart + 4 : -1;
+  var iSmellProb     = showSmell ? hiddenStart + 5 : -1;
+  var iProspector    = showProspector
+                       ? hiddenStart + (showSmell ? 6 : 4)
+                       : -1;
+
+  // Visible column index map
+  var vCommitRisk = 4, vCommitProb = 5, vBugRisk = 6, vBugProb = 7;
+  var vSmellRisk = showSmell ? 8 : -1;
+  var vSmellProb = showSmell ? 9 : -1;
+  var vProspector = showProspector
+                    ? (showSmell ? 10 : 8)
+                    : -1;
+
+  var columnDefs = [
+    { targets: [0],       className: "file-col"       },
+    { targets: [1, 2, 3], type: "num"                 },
+    { targets: [vCommitRisk], orderData: [iCommitPred]                 },
+    { targets: [vCommitProb], orderData: [iCommitProb], type: "num-fmt" },
+    { targets: [vBugRisk],    orderData: [iBugPred]                    },
+    { targets: [vBugProb],    orderData: [iBugProb],    type: "num-fmt" }
+  ];
+  if (showSmell) {
+    columnDefs.push({ targets: [vSmellRisk], orderData: [iSmellPred]                    });
+    columnDefs.push({ targets: [vSmellProb], orderData: [iSmellProb], type: "num-fmt"   });
+  }
+  if (showProspector) {
+    columnDefs.push({ targets: [vProspector], orderData: [iProspector], type: "num"     });
+  }
+
+  // Hide numeric sort columns
+  var hiddenTargets = [iCommitPred, iCommitProb, iBugPred, iBugProb];
+  if (showSmell)      hiddenTargets.push(iSmellPred, iSmellProb);
+  if (showProspector) hiddenTargets.push(iProspector);
+  columnDefs.push({ targets: hiddenTargets, visible: false, type: "num" });
+
   $("#resultsTable").DataTable({
     pageLength: 25,
-    order: [[11, "desc"]],
+    order: [[iBugProb, "desc"]],
     language: {
       search:            "Search:",
       searchPlaceholder: "Search files...",
@@ -239,15 +437,7 @@ $(document).ready(function () {
       emptyTable:        "No data available",
       loadingRecords:    "Loading..."
     },
-    columnDefs: [
-      { targets: [0],          className: "file-col"            },
-      { targets: [1, 2, 3],    type: "num"                      },
-      { targets: [8,9,10,11],  visible: false, type: "num"      },
-      { targets: [4],          orderData: [8]                   },
-      { targets: [5],          orderData: [9],  type: "num-fmt" },
-      { targets: [6],          orderData: [10]                  },
-      { targets: [7],          orderData: [11], type: "num-fmt" }
-    ],
+    columnDefs: columnDefs,
     dom: '<"dt-top"lf>rt<"dt-bottom"ip>',
     autoWidth: false,
     stateSave: false

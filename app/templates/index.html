@@ -55,6 +55,20 @@
         <p id="urlHint" class="input-hint">Example: https://github.com/pallets/flask</p>
         <p id="urlError" class="input-error hidden" role="alert" aria-live="polite"></p>
       </div>
+
+      <div class="form-options">
+        <label class="option-toggle" for="prospectorOpt">
+          <input type="checkbox"
+                 id="prospectorOpt"
+                 name="prospector"
+                 value="1"
+                 {% if not models_ready %}disabled{% endif %} />
+          <span class="option-toggle-text">
+            <strong>Run Prospector</strong>
+            <span class="option-hint">Deep code-smell scan (slower — adds ~1–5 min on large repos).</span>
+          </span>
+        </label>
+      </div>
     </form>
 
     <div id="progressSection"
@@ -82,23 +96,23 @@
   </div>
 
   <div class="info-row" aria-label="Model information">
-    <div class="card card-raised info-card">
+    <div class="card card-raised info-card info-card-commit">
       <div class="info-icon-text" aria-hidden="true">RF</div>
       <div class="info-label">Commit Prediction</div>
       <div class="info-val">Random Forest</div>
       <div class="info-score">F1 = 0.654</div>
     </div>
-    <div class="card card-raised info-card">
+    <div class="card card-raised info-card info-card-bug">
       <div class="info-icon-text" aria-hidden="true">ST</div>
       <div class="info-label">Bug Prediction</div>
       <div class="info-val">Stacking RF + AutoGluon</div>
       <div class="info-score">F1 = 0.823</div>
     </div>
-    <div class="card card-raised info-card">
-      <div class="info-icon-text" aria-hidden="true">36</div>
-      <div class="info-label">Feature Count</div>
-      <div class="info-val">36 features</div>
-      <div class="info-score">Radon + Git + Project</div>
+    <div class="card card-raised info-card info-card-smell">
+      <div class="info-icon-text" aria-hidden="true">SM</div>
+      <div class="info-label">Smell Prediction</div>
+      <div class="info-val">Random Forest + Prospector</div>
+      <div class="info-score">36 features · Radon + Git</div>
     </div>
   </div>
 </div>
