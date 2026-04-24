@@ -32,11 +32,27 @@ import logging
 import time
 from pathlib import Path
 
-from pydriller import Git
-
 from pipeline.config import SZZ_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
+
+
+# pydriller runtime-only bir bagimlilik — modul yukleme aninda import
+# etmek, onu kurmayan ortamlarda (ornegin T1-only kullanimi, CI test
+# matrisi) project_processor/collect.py'nin collection'ini patlatir.
+# Burada Git sembolu baslangicta None; `compute_szz_labels` cagrildiginda
+# gercek import yapilir. testlerin `patch("pipeline.szz.Git", ...)` pattern'i
+# bu lazy yukleme ile de calisir (atama modul-level yapilir).
+Git = None  # type: ignore[assignment]
+
+
+def _ensure_git_loaded() -> None:
+    """pydriller.Git'i (henuz yuklenmediyse) yukle."""
+    global Git
+    if Git is not None:
+        return
+    from pydriller import Git as _Git  # noqa: WPS433 — lazy import by design
+    Git = _Git
 
 
 def _normalize_path(p: str) -> str:
@@ -72,6 +88,12 @@ def compute_szz_labels(
 
     if not bug_fix_commits:
         return labels
+
+    try:
+        _ensure_git_loaded()
+    except ImportError as exc:
+        logger.warning("pydriller yuklu degil (%s) — SZZ atlanacak", exc)
+        return {}
 
     start = time.monotonic()
 

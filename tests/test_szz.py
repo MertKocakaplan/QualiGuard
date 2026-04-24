@@ -13,7 +13,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pipeline import szz
+# pydriller runtime bagimliligi; opsiyonel dev extra. Kurulu degilse
+# bu modul butunuyle skip olur — collection error'a neden olmaz.
+pytest.importorskip("pydriller")
+
+from pipeline import szz  # noqa: E402 — importorskip'ten sonra import
 
 
 class _FakeCommit:
