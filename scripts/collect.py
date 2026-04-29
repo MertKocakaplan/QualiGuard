@@ -77,10 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Checkpoint'ten devam et")
     p.add_argument("--skip-szz", action="store_true",
                    help="SZZ adimini atla")
+    p.add_argument("--skip-smells", action="store_true",
+                   help="Smell tespit adimini atla")
     p.add_argument("--skip-prospector", action="store_true",
-                   help="Prospector adimini atla")
+                   help="(deprecated) --skip-smells alias")
     p.add_argument("--workers", type=int, default=PROSPECTOR_WORKERS,
-                   help="Prospector paralel worker sayisi")
+                   help="(deprecated) AST smell detection worker gerektirmiyor")
     p.add_argument("--output-dir", type=Path, default=OUTPUT_DIR,
                    help="Cikti dizini")
     p.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -136,7 +138,7 @@ def _print_dry_run(args: argparse.Namespace) -> None:
     print(f"  phase            : {args.phase}")
     print(f"  resume           : {args.resume}")
     print(f"  skip-szz         : {args.skip_szz}")
-    print(f"  skip-prospector  : {args.skip_prospector}")
+    print(f"  skip-smells      : {args.skip_smells or args.skip_prospector}")
     print(f"  workers          : {args.workers}")
     print(f"  output-dir       : {args.output_dir}")
     print(f"  log-level        : {args.log_level}")
@@ -246,7 +248,7 @@ def _run_process(args: argparse.Namespace) -> int:
             result = project_processor.process_project(
                 proj,
                 skip_szz=args.skip_szz,
-                skip_prospector=args.skip_prospector,
+                skip_smells=args.skip_smells or args.skip_prospector,
                 workers=args.workers,
             )
         except KeyboardInterrupt:

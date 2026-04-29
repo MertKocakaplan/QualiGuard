@@ -87,13 +87,25 @@ RECENT_COMMIT_WINDOW_DAYS: Final[int] = 90
 SZZ_TIMEOUT_SECONDS: Final[int]       = 600
 
 
-# ── Prospector (F2) ───────────────────────────────────────────────
-PROSPECTOR_STRICTNESS: Final[str]     = "low"
+# ── Prospector (deprecated — sample validation icin tutuluyor) ────
+PROSPECTOR_STRICTNESS: Final[str]      = "low"
 PROSPECTOR_TIMEOUT_SECONDS: Final[int] = 90
 PROSPECTOR_WORKERS: Final[int]         = 4
+PROSPECTOR_ENABLED_FOR_VALIDATION: Final[bool] = False  # --use-prospector ile aktif
 
 
-# ── Smell esikleri ─────────────────────────────────────────────────
+# ── Code smell esikleri (Fowler 1999 + Lanza-Marinescu 2006) ──────
+LONG_METHOD_LOC: Final[int]          = 50
+LARGE_CLASS_LOC: Final[int]          = 500
+LARGE_CLASS_METHOD_COUNT: Final[int] = 10
+LONG_PARAM_COUNT: Final[int]         = 5
+NESTING_DEPTH: Final[int]            = 4
+HIGH_CC: Final[int]                  = 10
+LOW_MI: Final[int]                   = 20
+GOD_FUNC_CC: Final[int]              = 15
+GOD_FUNC_LOC: Final[int]             = 80
+
+# ── Smell binary label ──────────────────────────────────────────────
 SMELL_BINARY_PERCENTILE: Final[int]    = 80
 
 

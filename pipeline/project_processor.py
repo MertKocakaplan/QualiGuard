@@ -21,7 +21,6 @@ yazilacak.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
@@ -33,12 +32,10 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from pipeline import cloning, git_metrics, prospector_runner, static_metrics, szz
+from pipeline import cloning, code_smells, git_metrics, static_metrics, szz
 from pipeline.config import (
     FEATURES_BUG,
     PROJECTS_DIR,
-    PROSPECTOR_STRICTNESS,
-    PROSPECTOR_TIMEOUT_SECONDS,
     PROSPECTOR_WORKERS,
     REPOS_DIR,
     SZZ_TIMEOUT_SECONDS,
@@ -110,9 +107,9 @@ def _row_from_file(
     bulk: dict[str, dict],
     static_map: dict[str, dict],
     bug_szz_map: dict[str, int],
-    pros_map: dict[str, dict],
+    smell_map: dict[str, dict],
     include_szz: bool,
-    include_pros: bool,
+    include_smells: bool,
 ) -> Optional[dict[str, Any]]:
     """
     Tek dosya icin §14.1 semasina uygun kayit uret.
@@ -156,15 +153,26 @@ def _row_from_file(
     for key, value in stat.items():
         row[key] = value
 
-    # Prospector
-    if include_pros:
-        pr = pros_map.get(file_path_rel) or {}
-        row["smell_count"]      = pr.get("smell_count")  # int | None
-        cats = pr.get("categories") or {}
-        row["smell_categories"] = json.dumps(cats, ensure_ascii=False, sort_keys=True)
+    # Code smells (AST + radon)
+    if include_smells:
+        sm = smell_map.get(file_path_rel) or {}
+        row["smell_count"]               = sm.get("smell_count", 0)
+        row["smell_long_method"]         = sm.get("smell_long_method", 0)
+        row["smell_large_class"]         = sm.get("smell_large_class", 0)
+        row["smell_long_param_list"]     = sm.get("smell_long_param_list", 0)
+        row["smell_deep_nesting"]        = sm.get("smell_deep_nesting", 0)
+        row["smell_high_complexity"]     = sm.get("smell_high_complexity", 0)
+        row["smell_low_maintainability"] = sm.get("smell_low_maintainability", 0)
+        row["smell_god_function"]        = sm.get("smell_god_function", 0)
     else:
-        row["smell_count"]      = None
-        row["smell_categories"] = "{}"
+        row["smell_count"]               = None
+        row["smell_long_method"]         = None
+        row["smell_large_class"]         = None
+        row["smell_long_param_list"]     = None
+        row["smell_deep_nesting"]        = None
+        row["smell_high_complexity"]     = None
+        row["smell_low_maintainability"] = None
+        row["smell_god_function"]        = None
 
     return row
 
@@ -190,7 +198,13 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "avg_function_length", "effort_per_line",
     )
     int8_cols = ("bug_keyword",)
-    # Nullable: bug_szz (Int8), smell_count (Int32)
+    # Nullable: bug_szz (Int8); smell sütunlari (Int32)
+    smell_nullable_cols = (
+        "smell_count", "smell_long_method", "smell_large_class",
+        "smell_long_param_list", "smell_deep_nesting",
+        "smell_high_complexity", "smell_low_maintainability",
+        "smell_god_function",
+    )
 
     for col in int32_cols:
         if col in df.columns:
@@ -204,8 +218,9 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
 
     if "bug_szz" in df.columns:
         df["bug_szz"] = pd.to_numeric(df["bug_szz"], errors="coerce").astype("Int8")
-    if "smell_count" in df.columns:
-        df["smell_count"] = pd.to_numeric(df["smell_count"], errors="coerce").astype("Int32")
+    for col in smell_nullable_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int32")
 
     return df
 
@@ -216,7 +231,8 @@ def process_project(
     project: dict,
     *,
     skip_szz: bool = False,
-    skip_prospector: bool = False,
+    skip_smells: bool = False,
+    skip_prospector: bool = False,  # deprecated alias for skip_smells
     workers: int = PROSPECTOR_WORKERS,
     repos_dir: Path = REPOS_DIR,
     projects_dir: Path = PROJECTS_DIR,
@@ -229,8 +245,9 @@ def process_project(
                  (`full_name`, `clone_url`, `stars`, `contributor_count`,
                  `project_age_days`, `default_branch` ...).
         skip_szz: True ise SZZ calistirilmaz, bug_szz=None.
-        skip_prospector: True ise Prospector calistirilmaz, smell_count=None.
-        workers: Prospector paralel worker sayisi.
+        skip_smells: True ise smell tespiti calistirilmaz, smell_* sutunlari None.
+        skip_prospector: Deprecated alias for skip_smells (backward compat).
+        workers: Kullanilmiyor (backward compat, AST multiprocessing gerektirmiyor).
         repos_dir: Klonlarin toplandigi ebeveyn dizin.
         projects_dir: Per-project parquet'lerin yazildigi dizin.
 
@@ -249,6 +266,8 @@ def process_project(
             "error": str,                 # failed ise
         }
     """
+    _skip_smells = skip_smells or skip_prospector
+
     name = project.get("full_name") or "unknown"
     started = time.monotonic()
     logger.info("── %s (stars=%d) ──", name, project.get("stars", -1))
@@ -330,27 +349,20 @@ def process_project(
             szz_fallback = True
     # skip_szz=True ise bug_szz_map bos, _row_from_file None ile doldurur
 
-    # 6) Prospector (opsiyonel)
-    pros_by_rel: dict[str, dict] = {}
+    # 6) Code smells — AST + radon (opsiyonel)
+    smell_by_rel: dict[str, dict] = {}
     smells_missing = 0
-    if not skip_prospector:
+    if not _skip_smells:
         t0 = time.monotonic()
         abs_paths = [repo_path / f for f in head_files if f in static_map]
-        pros_results = prospector_runner.run_prospector_batch(
-            abs_paths,
-            workers=workers,
-            strictness=PROSPECTOR_STRICTNESS,
-            timeout_seconds=PROSPECTOR_TIMEOUT_SECONDS,
-        )
-        timings["prospector_secs"] = round(time.monotonic() - t0, 1)
-        for abs_p, result in pros_results.items():
+        smell_results = code_smells.detect_smells_batch(abs_paths)
+        timings["smells_secs"] = round(time.monotonic() - t0, 1)
+        for abs_p, result in smell_results.items():
             try:
                 rel = str(Path(abs_p).relative_to(repo_path)).replace("\\", "/")
             except ValueError:
                 continue
-            pros_by_rel[rel] = result
-            if result.get("smell_count") is None:
-                smells_missing += 1
+            smell_by_rel[rel] = result
 
     # 7) DataFrame insa
     rows: list[dict] = []
@@ -361,9 +373,9 @@ def process_project(
             bulk=bulk,
             static_map=static_map,
             bug_szz_map=bug_szz_map,
-            pros_map=pros_by_rel,
+            smell_map=smell_by_rel,
             include_szz=not skip_szz,
-            include_pros=not skip_prospector,
+            include_smells=not _skip_smells,
         )
         if row is not None:
             rows.append(row)
@@ -395,7 +407,7 @@ def process_project(
     )
     smells_total = (
         int(df["smell_count"].fillna(0).sum())
-        if "smell_count" in df.columns and not skip_prospector
+        if "smell_count" in df.columns and not _skip_smells
         else 0
     )
     duration = round(time.monotonic() - started, 1)

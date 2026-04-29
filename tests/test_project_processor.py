@@ -87,10 +87,16 @@ def test_process_project_happy_path_writes_parquet(tmp_dirs):
          patch("pipeline.project_processor._bug_fix_hashes", return_value=["h1"]), \
          patch("pipeline.project_processor.szz.compute_szz_labels",
                return_value={"app/module.py": 1, "app/service.py": 0}), \
-         patch("pipeline.project_processor.prospector_runner.run_prospector_batch",
+         patch("pipeline.project_processor.code_smells.detect_smells_batch",
                return_value={
-                   repo / "app/module.py":  {"smell_count": 7,  "categories": {"pylint": 7}, "messages": []},
-                   repo / "app/service.py": {"smell_count": 2,  "categories": {"pylint": 2}, "messages": []},
+                   repo / "app/module.py":  {"smell_count": 7, "smell_long_method": 3,
+                                             "smell_large_class": 0, "smell_long_param_list": 1,
+                                             "smell_deep_nesting": 1, "smell_high_complexity": 1,
+                                             "smell_low_maintainability": 0, "smell_god_function": 1},
+                   repo / "app/service.py": {"smell_count": 2, "smell_long_method": 1,
+                                             "smell_large_class": 0, "smell_long_param_list": 0,
+                                             "smell_deep_nesting": 1, "smell_high_complexity": 0,
+                                             "smell_low_maintainability": 0, "smell_god_function": 0},
                }), \
          patch("pipeline.project_processor.Path.read_text",
                return_value="def f():\n  return 1\n"):
@@ -118,13 +124,13 @@ def test_process_project_happy_path_writes_parquet(tmp_dirs):
         "cc_mean", "cc_max", "cc_total", "num_functions",
         "h_vocabulary", "h_volume", "maintainability_index",
         "comment_ratio", "doc_ratio", "complexity_density",
-        "smell_count", "smell_categories",
+        "smell_count", "smell_long_method", "smell_god_function",
     }
     assert expected_cols.issubset(df.columns), (
         f"eksik sutunlar: {expected_cols - set(df.columns)}"
     )
     # Tip uyumu
-    assert str(df["bug_szz"].dtype).startswith("Int")  # nullable int
+    assert str(df["bug_szz"].dtype).startswith("Int")
     assert str(df["smell_count"].dtype).startswith("Int")
     assert df["project_name"].iloc[0] == "user/demo"
 
@@ -148,17 +154,17 @@ def test_process_project_skip_szz_and_prospector(tmp_dirs):
                side_effect=lambda d: d), \
          patch("pipeline.project_processor.Path.read_text", return_value="x=1\n"), \
          patch("pipeline.project_processor.szz.compute_szz_labels") as m_szz, \
-         patch("pipeline.project_processor.prospector_runner.run_prospector_batch") as m_pros:
+         patch("pipeline.project_processor.code_smells.detect_smells_batch") as m_smells:
         result = project_processor.process_project(
-            _PROJ, skip_szz=True, skip_prospector=True,
+            _PROJ, skip_szz=True, skip_prospector=True,  # backward compat alias
             repos_dir=repos, projects_dir=projects,
         )
 
     assert result["status"] == "ok"
     # Hicbirisi cagrilmamali
     m_szz.assert_not_called()
-    m_pros.assert_not_called()
-    # bug_szz ve smell_count null olmali
+    m_smells.assert_not_called()
+    # bug_szz ve smell sutunlari null olmali
     df = pd.read_parquet(result["parquet"])
     assert df["bug_szz"].isna().all()
     assert df["smell_count"].isna().all()
@@ -220,9 +226,12 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
          patch("pipeline.project_processor._bug_fix_hashes", return_value=["h1"]), \
          patch("pipeline.project_processor.szz.compute_szz_labels",
                return_value={"pkg/m.py": 1}), \
-         patch("pipeline.project_processor.prospector_runner.run_prospector_batch",
+         patch("pipeline.project_processor.code_smells.detect_smells_batch",
                return_value={
-                   repo / "pkg/m.py": {"smell_count": 4, "categories": {"pylint": 4}, "messages": []},
+                   repo / "pkg/m.py": {"smell_count": 4, "smell_long_method": 2,
+                                       "smell_large_class": 0, "smell_long_param_list": 1,
+                                       "smell_deep_nesting": 0, "smell_high_complexity": 1,
+                                       "smell_low_maintainability": 0, "smell_god_function": 0},
                }):
         result = project_processor.process_project(
             _PROJ, repos_dir=repos, projects_dir=projects,
@@ -252,13 +261,16 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
         # Derived 4
         "complexity_density", "comment_per_function",
         "avg_function_length", "effort_per_line",
-        # Smell
-        "smell_count", "smell_categories",
+        # Smell (7 alt-sutun + toplam)
+        "smell_count", "smell_long_method", "smell_large_class",
+        "smell_long_param_list", "smell_deep_nesting",
+        "smell_high_complexity", "smell_low_maintainability",
+        "smell_god_function",
     }
     missing = required - set(df.columns)
     assert not missing, f"PLAN §14.1 eksik sutunlar: {sorted(missing)}"
 
-    # Dtype beklentileri (PLAN §14.1)
+    # Dtype beklentileri
     int32_cols = (
         "stars", "contributor_count", "project_age_days",
         "commit_count", "bug_count", "n_authors",
@@ -282,13 +294,13 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
 
     # bug_keyword: int8
     assert df["bug_keyword"].dtype == "int8"
-    # Nullable tipler: bug_szz=Int8, smell_count=Int32
+    # Nullable tipler: bug_szz=Int8, smell sutunlari=Int32
     assert str(df["bug_szz"].dtype) == "Int8"
-    assert str(df["smell_count"].dtype) == "Int32"
+    for smell_col in ("smell_count", "smell_long_method", "smell_god_function"):
+        assert str(df[smell_col].dtype) == "Int32", f"{smell_col} dtype yanlis"
     # String sutunlar
     assert df["file_path"].dtype == object
     assert df["project_name"].dtype == object
-    assert df["smell_categories"].dtype == object
 
     # Degerler mantikli
     assert df["project_name"].iloc[0] == "user/demo"
@@ -317,8 +329,11 @@ def test_process_project_szz_fallback_when_empty_dict(tmp_dirs):
          patch("pipeline.project_processor._bug_fix_hashes", return_value=["h1"]), \
          patch("pipeline.project_processor.szz.compute_szz_labels",
                return_value={}), \
-         patch("pipeline.project_processor.prospector_runner.run_prospector_batch",
-               return_value={repo / "x.py": {"smell_count": 0, "categories": {}, "messages": []}}):
+         patch("pipeline.project_processor.code_smells.detect_smells_batch",
+               return_value={repo / "x.py": {"smell_count": 0, "smell_long_method": 0,
+                                             "smell_large_class": 0, "smell_long_param_list": 0,
+                                             "smell_deep_nesting": 0, "smell_high_complexity": 0,
+                                             "smell_low_maintainability": 0, "smell_god_function": 0}}):
         result = project_processor.process_project(
             _PROJ, repos_dir=repos, projects_dir=projects,
         )
