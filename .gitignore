@@ -46,3 +46,10 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Claude Code harness state (per-machine)
+.claude/
+
+# Graphify outputs ve interpreter pointer (regenere edilir)
+graphify-out/
+.graphify_python
