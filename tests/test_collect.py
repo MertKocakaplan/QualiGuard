@@ -261,3 +261,41 @@ def test_dry_run_writes_nothing(collect_env, capsys):
     # Hicbir cikti dosyasi yok
     assert not list(collect_env["projects"].glob("*"))
     assert not list(collect_env["checkpoint"].glob("*"))
+
+
+def test_discovery_merge_preserves_old_projects(collect_env):
+    """
+    5 onceki proje varken 3 yeni (1 overlapping) gelindiginde 7 proje olur;
+    overlapping proje yeni meta'ya sahip olur, eski projeler korunur.
+    """
+    from scripts import collect as collect_mod
+
+    old_projects = [
+        {**_make_project(f"u/old{i}", i), "description": f"old_desc{i}"}
+        for i in range(5)
+    ]
+    _write_discovery(collect_env["checkpoint"], old_projects)
+
+    new_discovered = [
+        {**_make_project("u/old0", 99), "description": "fresh_desc"},  # overlap
+        _make_project("u/new1", 10),
+        _make_project("u/new2", 11),
+    ]
+
+    with patch("pipeline.discovery.search_projects", return_value=new_discovered), \
+         patch("scripts.collect.refresh_quota"), \
+         patch("scripts.collect.current_quota", return_value={}):
+        rc = collect_mod.main(["--phase", "discovery", "--log-level", "WARNING"])
+
+    assert rc == 0
+
+    data = json.loads(
+        (collect_env["checkpoint"] / "discovery.json").read_text(encoding="utf-8")
+    )
+    found = {p["full_name"]: p for p in data["found"]}
+
+    assert len(found) == 7
+    assert found["u/old0"]["description"] == "fresh_desc"
+    for i in range(1, 5):
+        assert f"u/old{i}" in found
+        assert found[f"u/old{i}"]["description"] == f"old_desc{i}"

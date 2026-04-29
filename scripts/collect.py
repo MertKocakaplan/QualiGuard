@@ -148,18 +148,50 @@ def _print_dry_run(args: argparse.Namespace) -> None:
 
 def _run_discovery(args: argparse.Namespace) -> int:
     """Discovery fazi — GitHub search + contributor filter."""
+    out_path = CHECKPOINT_DIR / "discovery.json"
+
+    # Mevcut meta'yi oku — yeni run'dan once, sonradan merge icin
+    existing_by_name: dict[str, dict] = {}
+    if out_path.exists():
+        try:
+            raw = json.loads(out_path.read_text(encoding="utf-8"))
+            existing_by_name = {
+                p["full_name"]: p
+                for p in raw.get("found", [])
+                if p.get("full_name")
+            }
+        except (json.JSONDecodeError, OSError):
+            pass
+
     refresh_quota()
     quota = current_quota()
     logger.info("GitHub quota: %s", quota)
 
-    found = discovery.search_projects(
+    new_results = discovery.search_projects(
         target_count=args.target,
         min_age_days=args.min_age_days,
         max_age_days=args.max_age_days,
         max_contributors=args.max_contributors,
         min_stars=args.min_stars,
     )
-    logger.info("discovery sonucu: %d proje", len(found))
+    logger.info("discovery sonucu: %d proje", len(new_results))
+
+    # Merge: yeni meta kazanir, onceki run'dan gelen projeler korunur.
+    # Boylece kucuk --target ile calisinca buyuk onceki dataset kaybolmaz.
+    merged = dict(existing_by_name)
+    new_count = sum(1 for p in new_results if p["full_name"] not in merged)
+    for p in new_results:
+        merged[p["full_name"]] = p
+
+    checkpoint_mod.save_checkpoint("discovery", {
+        "found": list(merged.values()),
+        "stats": {
+            "total":        len(merged),
+            "this_run_new": new_count,
+            "previous":     len(existing_by_name),
+        },
+    })
+    logger.info("discovery.json guncellendi: toplam=%d (yeni=%d)", len(merged), new_count)
     return 0
 
 

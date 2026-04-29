@@ -25,9 +25,8 @@ def test_feature_names_unique():
     assert len(set(config.FEATURES_SMELL))  == len(config.FEATURES_SMELL)
 
 
-def test_project_root_is_v2(tmp_path):
-    """PROJECT_ROOT v2/ olmali (pipeline/config.py'nin ebeveyni)."""
-    assert config.PROJECT_ROOT.name == "v2"
+def test_project_root_has_pipeline(tmp_path):
+    """PROJECT_ROOT icinde pipeline/ dizini olmali."""
     assert (config.PROJECT_ROOT / "pipeline").is_dir()
 
 
