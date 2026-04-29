@@ -62,7 +62,7 @@ DEFAULT_TARGET_COUNT: Final[int]      = 1000
 DEFAULT_MIN_AGE_DAYS: Final[int]      = 180  # ~6 ay
 DEFAULT_MAX_AGE_DAYS: Final[int]      = 365  # ~12 ay
 DEFAULT_MAX_CONTRIBUTORS: Final[int]  = 10
-DEFAULT_MIN_STARS: Final[int]         = 5
+DEFAULT_MIN_STARS: Final[int]         = 50
 DEFAULT_LANGUAGE: Final[str]          = "python"
 
 DISCOVERY_FLUSH_EVERY: Final[int]     = 50   # her N projede checkpoint
@@ -88,8 +88,8 @@ SZZ_TIMEOUT_SECONDS: Final[int]       = 600
 
 
 # ── Prospector (F2) ───────────────────────────────────────────────
-PROSPECTOR_STRICTNESS: Final[str]     = "medium"
-PROSPECTOR_TIMEOUT_SECONDS: Final[int] = 30
+PROSPECTOR_STRICTNESS: Final[str]     = "low"
+PROSPECTOR_TIMEOUT_SECONDS: Final[int] = 90
 PROSPECTOR_WORKERS: Final[int]         = 4
 
 

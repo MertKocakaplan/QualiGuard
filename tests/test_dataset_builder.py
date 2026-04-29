@@ -61,6 +61,23 @@ def test_add_dynamic_smell_binary_per_project_p80(project_files):
     assert pos_b["smell_count"].max() == 50
 
 
+def test_add_dynamic_smell_binary_all_na_skip_prospector(project_files):
+    """--skip-prospector durumu: tum smell_count NA -> smell_binary=0, crash yok."""
+    import pandas as pd
+    rows_a = [{"file_path": f"a{i}.py", "commit_count": 1, "smell_count": pd.NA}
+              for i in range(3)]
+    rows_b = [{"file_path": f"b{i}.py", "commit_count": 1, "smell_count": pd.NA}
+              for i in range(3)]
+    _write_project_parquet(project_files / "a.parquet", "u/a", rows_a)
+    _write_project_parquet(project_files / "b.parquet", "u/b", rows_b)
+
+    df = dataset_builder.load_project_parquets()
+    df = dataset_builder.add_dynamic_smell_binary(df)
+
+    assert (df["smell_binary"] == 0).all()
+    assert df["smell_binary"].dtype.name == "int8"
+
+
 def test_add_commit_label_uses_global_median(project_files):
     rows = [{"commit_count": c, "smell_count": 0} for c in [1, 2, 3, 10, 100]]
     # median = 3; >=3 → 1

@@ -57,13 +57,21 @@ def add_dynamic_smell_binary(
     olan dosyalara smell_binary=1 ata.
     """
     if df.empty or "smell_count" not in df.columns or "project_name" not in df.columns:
-        df["smell_binary"] = 0
+        df["smell_binary"] = pd.Series(0, index=df.index, dtype="int8")
+        return df
+
+    # Tum satirlar NA ise (--skip-prospector durumu) hicbir esik hesaplanamaz —
+    # smell_binary=0 ile cik, T3 anlamsizlasir ama pipeline crash etmez.
+    if df["smell_count"].isna().all():
+        df["smell_binary"] = pd.Series(0, index=df.index, dtype="int8")
         return df
 
     thresholds = df.groupby("project_name")["smell_count"].transform(
         lambda s: s.dropna().quantile(percentile / 100.0) if s.notna().any() else float("nan")
     )
-    df["smell_binary"] = (df["smell_count"].fillna(-1) >= thresholds).astype("int8")
+    # Bool maskede NA olabilir (esik NaN olan projelerde) — once False ile doldur.
+    mask = (df["smell_count"].fillna(-1) >= thresholds).fillna(False)
+    df["smell_binary"] = mask.astype("int8")
     return df
 
 
