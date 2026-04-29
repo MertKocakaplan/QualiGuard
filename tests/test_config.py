@@ -9,13 +9,13 @@ from pipeline import config
 
 
 def test_feature_counts_match_plan():
-    """PLAN §1: T1=29, T2=T3=36 ozellik."""
-    assert len(config.FEATURES_COMMIT) == 29, \
-        f"T1 commit 29 olmali, {len(config.FEATURES_COMMIT)} bulundu"
-    assert len(config.FEATURES_BUG) == 36, \
-        f"T2 bug 36 olmali, {len(config.FEATURES_BUG)} bulundu"
-    assert len(config.FEATURES_SMELL) == 36, \
-        f"T3 smell 36 olmali, {len(config.FEATURES_SMELL)} bulundu"
+    """F3.1 sonrasi: T1=31 (+2 cognitive), T2=T3=38."""
+    assert len(config.FEATURES_COMMIT) == 31, \
+        f"T1 commit 31 olmali, {len(config.FEATURES_COMMIT)} bulundu"
+    assert len(config.FEATURES_BUG) == 38, \
+        f"T2 bug 38 olmali, {len(config.FEATURES_BUG)} bulundu"
+    assert len(config.FEATURES_SMELL) == 38, \
+        f"T3 smell 38 olmali, {len(config.FEATURES_SMELL)} bulundu"
 
 
 def test_feature_names_unique():

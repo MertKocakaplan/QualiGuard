@@ -1,15 +1,17 @@
 """
-static_metrics.py — Radon tabanli statik metrik hesabi.
+static_metrics.py — Radon + cognitive complexity tabanli statik metrik hesabi.
 
 V1'deki app/metrics.py'den taşınmistir (PLAN §3.4). Imzalar korunur.
 
-Tek dosya icin 22 raw/derivable metrik + 4 derived = 26 ozellik uretir.
+Tek dosya icin 22 raw/derivable metrik + 4 derived + 2 cognitive = 28 ozellik uretir.
 """
 from __future__ import annotations
 
+import ast
 import logging
 from typing import Optional
 
+from cognitive_complexity.api import get_cognitive_complexity
 from radon.complexity import cc_visit
 from radon.metrics import h_visit, mi_visit
 from radon.raw import analyze
@@ -102,6 +104,24 @@ def calculate_metrics(source_code: str) -> Optional[dict]:
         metrics["maintainability_index"] = mi_visit(source_code, multi=True)
     except (SyntaxError, TypeError, ValueError):
         metrics["maintainability_index"] = 0
+
+    # ── Cognitive Complexity (Campbell 2018) ─────────────────
+    try:
+        tree = ast.parse(source_code)
+        funcs = [
+            n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        if funcs:
+            cog_values = [get_cognitive_complexity(f) for f in funcs]
+            metrics["cognitive_complexity_total"] = sum(cog_values)
+            metrics["cognitive_complexity_max"]   = max(cog_values)
+        else:
+            metrics["cognitive_complexity_total"] = 0
+            metrics["cognitive_complexity_max"]   = 0
+    except (SyntaxError, TypeError, ValueError, RecursionError):
+        metrics["cognitive_complexity_total"] = 0
+        metrics["cognitive_complexity_max"]   = 0
 
     # ── Oran metrikleri ──────────────────────────────────────
     loc = max(metrics["loc"], 1)

@@ -126,8 +126,9 @@ def test_group_kfold_indices_no_leakage():
 
 # ── get_feature_set ──────────────────────────────────────────────
 
-def test_get_feature_set_static_is_22():
-    assert len(mu.get_feature_set("commit", "static")) == 22
+def test_get_feature_set_static_is_24():
+    # F3.1: +2 cognitive complexity → 22 → 24
+    assert len(mu.get_feature_set("commit", "static")) == 24
 
 
 def test_get_feature_set_derived_is_static_plus_4():
@@ -146,11 +147,11 @@ def test_get_feature_set_process_equals_all_for_commit():
 
 
 def test_get_feature_set_all_bug_has_36_cols():
-    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 36
+    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 38
 
 
 def test_get_feature_set_all_commit_has_29_cols():
-    assert len(mu.get_feature_set("commit", "all")) == len(FEATURES_COMMIT) == 29
+    assert len(mu.get_feature_set("commit", "all")) == len(FEATURES_COMMIT) == 31
 
 
 def test_get_feature_set_invalid_task_raises():

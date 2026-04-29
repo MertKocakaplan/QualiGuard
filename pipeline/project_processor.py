@@ -186,6 +186,7 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "loc", "lloc", "sloc", "comments", "multi", "blank",
         "single_comments", "num_functions",
         "commits_to_first_bug",
+        "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
     )
     float32_cols = (
         "file_age_days", "avg_churn_per_commit",

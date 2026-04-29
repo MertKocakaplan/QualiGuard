@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # ── Feature set secimi (ablation) ────────────────────────────────
 
-# Radon raw (22)
+# Radon raw + cognitive (22 + 2 = 24)
 STATIC_FEATURES: tuple[str, ...] = (
     "loc", "lloc", "sloc", "comments", "multi", "blank", "single_comments",
     "cc_mean", "cc_max", "cc_total", "num_functions",
@@ -39,6 +39,7 @@ STATIC_FEATURES: tuple[str, ...] = (
     "h_effort", "h_bugs", "h_time", "h_calculated_length",
     "maintainability_index",
     "comment_ratio", "doc_ratio",
+    "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
 )
 
 # Derived (+4)
