@@ -53,6 +53,32 @@ BUG_KEYWORDS = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Per-keyword gruplar (Antoniol et al. 2008)
+BUG_KEYWORD_GROUPS: dict[str, tuple[str, ...]] = {
+    "fix":     ("fix", "fixed", "fixes", "fixing", "hotfix", "bugfix"),
+    "bug":     ("bug", "bugs", "buggy"),
+    "error":   ("error", "errors"),
+    "defect":  ("defect", "defects"),
+    "issue":   ("issue", "issues"),
+    "anomaly": ("anomaly", "anomalies"),
+}
+_BUG_KW_COMPILED: dict[str, re.Pattern] = {
+    group: re.compile(
+        r"|".join(rf"\b{w}\b" for w in words),
+        re.IGNORECASE,
+    )
+    for group, words in BUG_KEYWORD_GROUPS.items()
+}
+
+
+def classify_bug_message(message: str) -> dict[str, int]:
+    """Mesajda her keyword grubu icin 0/1 dondur."""
+    msg = message or ""
+    return {
+        f"bug_kw_{group}": (1 if pat.search(msg) else 0)
+        for group, pat in _BUG_KW_COMPILED.items()
+    }
+
 REFACTOR_KEYWORDS = re.compile(
     r"\b("
     r"refactor(ed|ing|s)?|cleanup|clean.?up|"
@@ -213,6 +239,8 @@ def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict
     now_ts     = now.timestamp()
     cutoff_ts  = (now - timedelta(days=RECENT_COMMIT_WINDOW_DAYS)).timestamp()
 
+    _kw_groups = list(BUG_KEYWORD_GROUPS.keys())
+
     file_stats: dict[str, dict] = {
         f: {
             "commit_count": 0,
@@ -220,13 +248,15 @@ def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict
             "authors":      set(),
             "timestamps":   [],
             "churns":       [],
+            **{f"bug_kw_{g}_count": 0 for g in _kw_groups},
         }
         for f in head_files
     }
 
-    current_is_bug = False
-    current_ts     = 0
-    current_author = ""
+    current_is_bug  = False
+    current_ts      = 0
+    current_author  = ""
+    current_kw_hits: dict[str, int] = {}
 
     for line in result.stdout.split("\n"):
         line = line.strip()
@@ -242,7 +272,8 @@ def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict
                 except (ValueError, IndexError):
                     current_ts = 0
                 subject = parts[4] if len(parts) > 4 else ""
-                current_is_bug = is_bug_message(subject)
+                current_is_bug  = is_bug_message(subject)
+                current_kw_hits = classify_bug_message(subject)
         else:
             parts = line.split("\t")
             if len(parts) != 3:
@@ -256,6 +287,8 @@ def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict
             st["commit_count"] += 1
             if current_is_bug:
                 st["bug_count"] += 1
+            for g in _kw_groups:
+                st[f"bug_kw_{g}_count"] += current_kw_hits.get(f"bug_kw_{g}", 0)
             st["authors"].add(current_author)
             st["timestamps"].append(current_ts)
             try:
@@ -283,5 +316,6 @@ def get_bulk_git_stats(repo_path: Path, head_files: list[str]) -> dict[str, dict
             "avg_churn_per_commit": round(total_ch / len(churns), 1) if churns else 0,
             "max_single_churn":     max(churns) if churns else 0,
             "recent_commits_90d":   recent,
+            **{f"bug_kw_{g}_count": st[f"bug_kw_{g}_count"] for g in _kw_groups},
         }
     return results

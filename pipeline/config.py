@@ -124,16 +124,19 @@ FEATURES_COMMIT: Final[tuple[str, ...]] = (
     "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
 )
 
-# T2 bug (36 ozellik) — T1 + process metrikleri
+# T2 bug (44 ozellik) — T1 + process + keyword counts
 FEATURES_PROCESS: Final[tuple[str, ...]] = (
     "commit_count", "bug_count", "n_authors", "file_age_days",
     "churn_total", "avg_churn_per_commit", "max_single_churn",
     "recent_commits_90d",
 )
-FEATURES_BUG: Final[tuple[str, ...]]   = FEATURES_COMMIT + (
+FEATURES_BUG: Final[tuple[str, ...]] = FEATURES_COMMIT + (
     "commit_count", "n_authors", "file_age_days",
     "churn_total", "avg_churn_per_commit", "max_single_churn",
     "recent_commits_90d",
+    # F3.2 — bug keyword separation (Antoniol et al. 2008)
+    "bug_kw_fix_count", "bug_kw_bug_count", "bug_kw_error_count",
+    "bug_kw_defect_count", "bug_kw_issue_count", "bug_kw_anomaly_count",
 )
 # T3 smell — T2 ile ayni ozellik seti
 FEATURES_SMELL: Final[tuple[str, ...]] = FEATURES_BUG

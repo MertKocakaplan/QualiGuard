@@ -147,7 +147,7 @@ def test_get_feature_set_process_equals_all_for_commit():
 
 
 def test_get_feature_set_all_bug_has_36_cols():
-    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 38
+    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 44
 
 
 def test_get_feature_set_all_commit_has_29_cols():

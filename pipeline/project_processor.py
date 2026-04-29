@@ -138,6 +138,14 @@ def _row_from_file(
         "max_single_churn":     int(b.get("max_single_churn", 0)),
         "recent_commits_90d":   int(b.get("recent_commits_90d", 0)),
 
+        # Bug keyword separation (F3.2)
+        "bug_kw_fix_count":     int(b.get("bug_kw_fix_count", 0)),
+        "bug_kw_bug_count":     int(b.get("bug_kw_bug_count", 0)),
+        "bug_kw_error_count":   int(b.get("bug_kw_error_count", 0)),
+        "bug_kw_defect_count":  int(b.get("bug_kw_defect_count", 0)),
+        "bug_kw_issue_count":   int(b.get("bug_kw_issue_count", 0)),
+        "bug_kw_anomaly_count": int(b.get("bug_kw_anomaly_count", 0)),
+
         # Etiketler
         "bug_keyword":          1 if b.get("bug_count", 0) > 0 else 0,
         "commits_to_first_bug": -1,  # F6'da dolduralacak
@@ -187,6 +195,8 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "single_comments", "num_functions",
         "commits_to_first_bug",
         "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
+        "bug_kw_fix_count", "bug_kw_bug_count", "bug_kw_error_count",  # F3.2
+        "bug_kw_defect_count", "bug_kw_issue_count", "bug_kw_anomaly_count",
     )
     float32_cols = (
         "file_age_days", "avg_churn_per_commit",
