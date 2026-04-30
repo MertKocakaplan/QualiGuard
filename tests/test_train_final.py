@@ -102,8 +102,8 @@ def test_train_commit_and_smell_e2e(tmp_path: Path, monkeypatch):
     # feature_names.json iki gorev icin de yazilmis
     fn = json.loads((models_dir / "feature_names.json").read_text(encoding="utf-8"))
     assert "commit" in fn and "smell" in fn
-    assert len(fn["commit"]) == 31
-    assert len(fn["smell"]) == 44
+    assert len(fn["commit"]) == 35
+    assert len(fn["smell"]) == 48
 
     # project_stats.json olusmus
     ps = json.loads((models_dir / "project_stats.json").read_text(encoding="utf-8"))

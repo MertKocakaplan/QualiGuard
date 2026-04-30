@@ -108,6 +108,7 @@ def _row_from_file(
     static_map: dict[str, dict],
     bug_szz_map: dict[str, int],
     smell_map: dict[str, dict],
+    repo_summary: dict,
     include_szz: bool,
     include_smells: bool,
 ) -> Optional[dict[str, Any]]:
@@ -145,6 +146,12 @@ def _row_from_file(
         "bug_kw_defect_count":  int(b.get("bug_kw_defect_count", 0)),
         "bug_kw_issue_count":   int(b.get("bug_kw_issue_count", 0)),
         "bug_kw_anomaly_count": int(b.get("bug_kw_anomaly_count", 0)),
+
+        # Process-history proxies — repo-level, her satira yansitilir (F3.5)
+        "revert_count":         int(repo_summary.get("revert_count", 0)),
+        "inter_commit_time_cv": float(repo_summary.get("inter_commit_time_cv", 0.0)),
+        "author_entropy":       float(repo_summary.get("author_entropy", 0.0)),
+        "bug_fix_density":      float(repo_summary.get("bug_fix_density", 0.0)),
 
         # Etiketler
         "bug_keyword":          1 if b.get("bug_count", 0) > 0 else 0,
@@ -197,6 +204,7 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
         "bug_kw_fix_count", "bug_kw_bug_count", "bug_kw_error_count",  # F3.2
         "bug_kw_defect_count", "bug_kw_issue_count", "bug_kw_anomaly_count",
+        "revert_count",  # F3.5
     )
     float32_cols = (
         "file_age_days", "avg_churn_per_commit",
@@ -207,6 +215,7 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "comment_ratio", "doc_ratio",
         "complexity_density", "comment_per_function",
         "avg_function_length", "effort_per_line",
+        "inter_commit_time_cv", "author_entropy", "bug_fix_density",  # F3.5
     )
     int8_cols = ("bug_keyword",)
     # Nullable: bug_szz (Int8); smell sütunlari (Int32)
@@ -309,9 +318,10 @@ def process_project(
             "timing":       timings,
         }
 
-    # 3) Bulk git stats
+    # 3) Bulk git stats + repo-level commit summary (F3.5)
     t0 = time.monotonic()
-    bulk = git_metrics.get_bulk_git_stats(repo_path, head_files)
+    bulk         = git_metrics.get_bulk_git_stats(repo_path, head_files)
+    repo_summary = git_metrics.get_repo_commit_summary(repo_path)
     timings["git_secs"] = round(time.monotonic() - t0, 1)
 
     # 4) Statik metrikler (her dosya icin)
@@ -339,6 +349,13 @@ def process_project(
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "timing":       timings,
         }
+
+    # bug_fix_density: repo-level, LOC tanimlandi (F3.5)
+    total_kloc = sum(m.get("loc", 0) for m in static_map.values()) / 1000
+    age_years  = max(project.get("project_age_days", 365), 1) / 365
+    repo_summary["bug_fix_density"] = git_metrics.bug_fix_density(
+        repo_summary.get("bug_fix_commits", 0), total_kloc, age_years,
+    )
 
     # 5) SZZ (opsiyonel)
     bug_szz_map: dict[str, int] = {}
@@ -385,6 +402,7 @@ def process_project(
             static_map=static_map,
             bug_szz_map=bug_szz_map,
             smell_map=smell_by_rel,
+            repo_summary=repo_summary,
             include_szz=not skip_szz,
             include_smells=not _skip_smells,
         )

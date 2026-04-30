@@ -110,7 +110,7 @@ SMELL_BINARY_PERCENTILE: Final[int]    = 80
 
 
 # ── Feature sutun siralari ────────────────────────────────────────
-# T1 commit (31 ozellik) — proje + statik + turetilmis + cognitive
+# T1 commit (35 ozellik) — proje + statik + turetilmis + cognitive + repo-history
 FEATURES_COMMIT: Final[tuple[str, ...]] = (
     "loc", "lloc", "sloc", "comments", "multi", "blank", "single_comments",
     "cc_mean", "cc_max", "cc_total", "num_functions",
@@ -122,6 +122,8 @@ FEATURES_COMMIT: Final[tuple[str, ...]] = (
     "avg_function_length", "effort_per_line",
     "stars", "contributor_count", "project_age_days",
     "cognitive_complexity_total", "cognitive_complexity_max",  # F3.1
+    # F3.5 — process-history proxies (Mockus et al. 2002)
+    "revert_count", "inter_commit_time_cv", "author_entropy", "bug_fix_density",
 )
 
 # T2 bug (44 ozellik) — T1 + process + keyword counts

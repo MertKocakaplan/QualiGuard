@@ -142,16 +142,16 @@ def test_get_feature_set_derived_is_static_plus_4():
 def test_get_feature_set_process_equals_all_for_commit():
     process = mu.get_feature_set("commit", "process")
     all_set = mu.get_feature_set("commit", "all")
-    # Commit taski icin process = FEATURES_COMMIT (proje meta dahil, process metric haric)
+    # Commit taski icin process = FEATURES_COMMIT (proje meta + repo-history dahil)
     assert len(process) == len(all_set) == len(FEATURES_COMMIT)
 
 
-def test_get_feature_set_all_bug_has_36_cols():
-    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 44
+def test_get_feature_set_all_bug_has_48_cols():
+    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 48
 
 
-def test_get_feature_set_all_commit_has_29_cols():
-    assert len(mu.get_feature_set("commit", "all")) == len(FEATURES_COMMIT) == 31
+def test_get_feature_set_all_commit_has_35_cols():
+    assert len(mu.get_feature_set("commit", "all")) == len(FEATURES_COMMIT) == 35
 
 
 def test_get_feature_set_invalid_task_raises():

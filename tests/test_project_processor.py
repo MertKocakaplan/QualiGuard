@@ -80,6 +80,8 @@ def test_process_project_happy_path_writes_parquet(tmp_dirs):
                return_value=files), \
          patch("pipeline.project_processor.git_metrics.get_bulk_git_stats",
                return_value=_bulk_for(files)), \
+         patch("pipeline.project_processor.git_metrics.get_repo_commit_summary",
+               return_value={}), \
          patch("pipeline.project_processor.static_metrics.calculate_metrics",
                side_effect=lambda *a, **kw: _static_ok()), \
          patch("pipeline.project_processor.static_metrics.calculate_derived",
@@ -148,6 +150,8 @@ def test_process_project_skip_szz_and_prospector(tmp_dirs):
                return_value=files), \
          patch("pipeline.project_processor.git_metrics.get_bulk_git_stats",
                return_value=_bulk_for(files)), \
+         patch("pipeline.project_processor.git_metrics.get_repo_commit_summary",
+               return_value={}), \
          patch("pipeline.project_processor.static_metrics.calculate_metrics",
                side_effect=lambda *a, **kw: _static_ok()), \
          patch("pipeline.project_processor.static_metrics.calculate_derived",
@@ -218,6 +222,8 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
                return_value=files), \
          patch("pipeline.project_processor.git_metrics.get_bulk_git_stats",
                return_value=_bulk_for(files)), \
+         patch("pipeline.project_processor.git_metrics.get_repo_commit_summary",
+               return_value={}), \
          patch("pipeline.project_processor.static_metrics.calculate_metrics",
                side_effect=lambda *a, **kw: _static_ok()), \
          patch("pipeline.project_processor.static_metrics.calculate_derived",
@@ -266,6 +272,8 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
         "smell_long_param_list", "smell_deep_nesting",
         "smell_high_complexity", "smell_low_maintainability",
         "smell_god_function",
+        # F3.5 — process-history proxies
+        "revert_count", "inter_commit_time_cv", "author_entropy", "bug_fix_density",
     }
     missing = required - set(df.columns)
     assert not missing, f"PLAN §14.1 eksik sutunlar: {sorted(missing)}"
@@ -277,6 +285,7 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
         "churn_total", "max_single_churn", "recent_commits_90d",
         "loc", "lloc", "sloc", "comments", "multi", "blank",
         "single_comments", "num_functions", "commits_to_first_bug",
+        "revert_count",  # F3.5
     )
     float32_cols = (
         "file_age_days", "avg_churn_per_commit",
@@ -286,6 +295,7 @@ def test_process_project_parquet_schema_matches_plan_14_1(tmp_dirs):
         "maintainability_index", "comment_ratio", "doc_ratio",
         "complexity_density", "comment_per_function",
         "avg_function_length", "effort_per_line",
+        "inter_commit_time_cv", "author_entropy", "bug_fix_density",  # F3.5
     )
     for col in int32_cols:
         assert df[col].dtype == "int32", f"{col}: int32 bekleniyor, {df[col].dtype}"
@@ -321,6 +331,8 @@ def test_process_project_szz_fallback_when_empty_dict(tmp_dirs):
                return_value=files), \
          patch("pipeline.project_processor.git_metrics.get_bulk_git_stats",
                return_value=_bulk_for(files)), \
+         patch("pipeline.project_processor.git_metrics.get_repo_commit_summary",
+               return_value={}), \
          patch("pipeline.project_processor.static_metrics.calculate_metrics",
                side_effect=lambda *a, **kw: _static_ok()), \
          patch("pipeline.project_processor.static_metrics.calculate_derived",

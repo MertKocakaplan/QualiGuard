@@ -48,9 +48,10 @@ DERIVED_FEATURES: tuple[str, ...] = (
     "avg_function_length", "effort_per_line",
 )
 
-# Proje meta (+3)
+# Proje meta + repo-history proxies (+3 +4 = +7)  F3.5
 PROJECT_META_FEATURES: tuple[str, ...] = (
     "stars", "contributor_count", "project_age_days",
+    "revert_count", "inter_commit_time_cv", "author_entropy", "bug_fix_density",
 )
 
 # Process metrics (bug_count haric, data leakage riski)
@@ -69,7 +70,7 @@ def get_feature_set(task: str, variant: str) -> tuple[str, ...]:
 
     Returns:
         Sutun isimlerinin tuple'i. Variant "all" icin task'a gore
-        `FEATURES_COMMIT` (29) ya da `FEATURES_BUG` (36) doner.
+        `FEATURES_COMMIT` (35) ya da `FEATURES_BUG` (48) doner.
     """
     task = task.lower()
     variant = variant.lower()
