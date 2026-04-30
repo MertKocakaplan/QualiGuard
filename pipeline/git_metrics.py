@@ -221,7 +221,6 @@ def get_repo_commit_summary(
         except ValueError:
             pass
 
-    refactor_ratio     = reverts / max(total, 1)  # revert ratio (PR rejection proxy)
     contribution_gini  = gini_coefficient(list(author_commits.values()))
     commit_cadence_cv  = inter_commit_time_cv(timestamps)
     commit_entropy     = author_entropy(author_commits)
