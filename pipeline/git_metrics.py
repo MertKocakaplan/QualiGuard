@@ -90,6 +90,53 @@ REFACTOR_KEYWORDS = re.compile(
 )
 
 
+# ── Yardimci hesap fonksiyonlari (F3.3 – F3.5) ───────────────────
+
+def gini_coefficient(values: list[int]) -> float:
+    """
+    Gini katsayisi (0 = esit dagilim, 1 = tek kiside konsantrasyon).
+    Mockus et al. (2002) power-law contribution distribution.
+    """
+    if not values or sum(values) == 0:
+        return 0.0
+    sorted_v = sorted(values)
+    n = len(sorted_v)
+    cum = sum((i + 1) * v for i, v in enumerate(sorted_v))
+    total = sum(sorted_v)
+    return (2 * cum) / (n * total) - (n + 1) / n
+
+
+def inter_commit_time_cv(timestamps: list[int]) -> float:
+    """
+    Commit arasi surelerin coefficient of variation (std/mean).
+    Yuksek = duzensiz gelistirme, dusuk = stabil kadans.
+    """
+    if len(timestamps) < 2:
+        return 0.0
+    sorted_ts = sorted(timestamps)
+    deltas = [sorted_ts[i + 1] - sorted_ts[i] for i in range(len(sorted_ts) - 1)]
+    mean = sum(deltas) / len(deltas)
+    if mean == 0:
+        return 0.0
+    var = sum((d - mean) ** 2 for d in deltas) / len(deltas)
+    return (var ** 0.5) / mean
+
+
+def author_entropy(author_commits: dict[str, int]) -> float:
+    """Shannon entropisi — yazar commit dagilimi (bit cinsinden)."""
+    import math
+    total = sum(author_commits.values())
+    if total == 0:
+        return 0.0
+    probs = [c / total for c in author_commits.values()]
+    return -sum(p * math.log2(p) for p in probs if p > 0)
+
+
+def bug_fix_density(bug_fix_count: int, kloc: float, age_years: float) -> float:
+    """Bug-fix sayisi / KLOC / yil (issue density proxy). Mockus (2010)."""
+    return bug_fix_count / max(kloc, 0.1) / max(age_years, 0.1)
+
+
 # ── Public API ───────────────────────────────────────────────────
 
 def should_skip_file(file_path: str) -> bool:
@@ -122,7 +169,7 @@ def get_repo_commit_summary(
     """
     try:
         result = subprocess.run(
-            ["git", "log", "--pretty=format:%at|%s", "HEAD"],
+            ["git", "log", "--pretty=format:%at|%ae|%s", "HEAD"],
             cwd=str(repo_path),
             capture_output=True,
             text=True,
@@ -132,20 +179,10 @@ def get_repo_commit_summary(
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.warning("get_repo_commit_summary basarisiz (%s): %s", repo_path, exc)
-        return {
-            "total_commits":      0,
-            "bug_fix_commits":    0,
-            "refactor_commits":   0,
-            "recent_commits_90d": 0,
-        }
+        return _empty_summary()
 
     if result.returncode != 0 or not result.stdout.strip():
-        return {
-            "total_commits":      0,
-            "bug_fix_commits":    0,
-            "refactor_commits":   0,
-            "recent_commits_90d": 0,
-        }
+        return _empty_summary()
 
     now       = datetime.now(timezone.utc)
     cutoff_ts = (now - timedelta(days=RECENT_COMMIT_WINDOW_DAYS)).timestamp()
@@ -153,29 +190,69 @@ def get_repo_commit_summary(
     total    = 0
     bugs     = 0
     refacs   = 0
+    reverts  = 0
     recent   = 0
+    timestamps: list[int] = []
+    author_commits: dict[str, int] = {}
 
     for line in result.stdout.split("\n"):
         line = line.strip()
         if not line:
             continue
-        ts_str, _, subject = line.partition("|")
+        parts = line.split("|", 2)
+        ts_str  = parts[0] if len(parts) > 0 else ""
+        author  = parts[1] if len(parts) > 1 else ""
+        subject = parts[2] if len(parts) > 2 else ""
+
         total += 1
         if is_bug_message(subject):
             bugs += 1
         if is_refactor_message(subject):
             refacs += 1
+        if re.match(r"^revert\b", subject.strip(), re.IGNORECASE):
+            reverts += 1
+        if author:
+            author_commits[author] = author_commits.get(author, 0) + 1
         try:
-            if int(ts_str) >= cutoff_ts:
+            ts = int(ts_str)
+            timestamps.append(ts)
+            if ts >= cutoff_ts:
                 recent += 1
         except ValueError:
             pass
 
+    refactor_ratio     = reverts / max(total, 1)  # revert ratio (PR rejection proxy)
+    contribution_gini  = gini_coefficient(list(author_commits.values()))
+    commit_cadence_cv  = inter_commit_time_cv(timestamps)
+    commit_entropy     = author_entropy(author_commits)
+
     return {
-        "total_commits":      total,
-        "bug_fix_commits":    bugs,
-        "refactor_commits":   refacs,
-        "recent_commits_90d": recent,
+        "total_commits":       total,
+        "bug_fix_commits":     bugs,
+        "refactor_commits":    refacs,
+        "recent_commits_90d":  recent,
+        # F3.3
+        "refactor_ratio":      round(refacs / max(total, 1), 4),
+        # F3.4
+        "contribution_gini":   round(contribution_gini, 4),
+        # F3.5
+        "revert_count":             reverts,
+        "inter_commit_time_cv":     round(commit_cadence_cv, 4),
+        "author_entropy":           round(commit_entropy, 4),
+    }
+
+
+def _empty_summary() -> dict:
+    return {
+        "total_commits":       0,
+        "bug_fix_commits":     0,
+        "refactor_commits":    0,
+        "recent_commits_90d":  0,
+        "refactor_ratio":      0.0,
+        "contribution_gini":   0.0,
+        "revert_count":        0,
+        "inter_commit_time_cv": 0.0,
+        "author_entropy":      0.0,
     }
 
 
