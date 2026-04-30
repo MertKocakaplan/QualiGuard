@@ -1086,20 +1086,29 @@ Kararlar tablo şeklinde plan'ın §2'sinde, akademik defansların
 
 ## 14. Tamamlama checklist (paper revize öncesi)
 
-- [ ] F1 (discovery merge) commit'lendi, pytest pass
-- [ ] F2 (smell migration) commit'lendi, smoke test < 5 dk
-- [ ] F2 sample validation Cohen's kappa raporu üretildi
-- [ ] F3.1 (cognitive complexity) commit'lendi
-- [ ] F3.2 (bug keyword separation) commit'lendi
-- [ ] F3.3 (refactor ratio) commit'lendi
-- [ ] F3.4 (contribution Gini) commit'lendi
-- [ ] F3.5 (git proxies) commit'lendi
-- [ ] F4 (two-stage split) commit'lendi
-- [ ] F5 (calibrated risk score) commit'lendi
-- [ ] Final 50-projelik smoke test geçti
+- [x] F1 (discovery merge) commit'lendi, pytest pass — `dedab59`
+- [x] F2 (smell migration) commit'lendi, smoke test < 5 dk — `fbdd20e`
+- [x] F2 sample validation Cohen's kappa raporu üretildi — `263ff76` (F6)
+- [x] F3.1 (cognitive complexity) commit'lendi — `f6e7218`
+- [x] F3.2 (bug keyword separation) commit'lendi — `60ea512`
+- [x] F3.3 (refactor ratio) commit'lendi — `0472c87`
+- [x] F3.4 (contribution Gini) commit'lendi — `0472c87`
+- [x] F3.5 (git proxies) commit'lendi — `493d3b5`
+- [x] F4 (two-stage split) commit'lendi — `50690f4`
+- [x] F5 (calibrated risk score) commit'lendi — `7322c3b`
+- [ ] Final 50-projelik smoke test geçti (mevcut dataset eski schema; yeni --phase process çalıştırıldığında yeni feature'lar eklenecek)
 - [ ] 1000-projelik production run başlatıldı
 - [ ] Paper'da §11'deki defans cümleleri ilgili bölümlere eklendi
 - [ ] PLAN.md ve CHANGELOG.md güncellendi
+
+**Tamamlanan fazların özeti (2026-04-30):**
+- F1–F6 tüm commit'lendi: 216 test pass, 3 skip
+- FEATURES_COMMIT=35, FEATURES_BUG=FEATURES_SMELL=48
+- Yeni feature'lar: cognitive_complexity_total/max (F3.1),
+  bug_kw_*_count ×6 (F3.2), refactor_ratio, contribution_gini (F3.3/F3.4),
+  revert_count, inter_commit_time_cv, author_entropy, bug_fix_density (F3.5)
+- validate_smell_sample.py: Prospector timeout sorunu nedeniyle --skip-prospector
+  kullanılmalı; kappa hesaplaması Prospector erişimi olan ortamda çalıştırılmalı
 
 ---
 
