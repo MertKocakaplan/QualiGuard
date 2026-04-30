@@ -982,3 +982,27 @@ Bu bölüm planı başka bir sohbette uygulayacak agent için özel yönergeler.
   (interactive analiz için) ve saf `.py` scripts (batch için). Sebep: VS Code
   native destek, temiz git diff, kernel crash riski yok, tek format. Eski
   notebook'lar `archive/v1/` altına taşınır.
+- 2026-04-29: **V2 enhancement plan** kararlaştırıldı (`docs/v2_enhancement_plan.md`).
+  Paper revize için 8 maddelik iş paketi: F1 discovery merge, F2 Prospector →
+  AST+radon migrasyonu, F3.1-F3.5 feature paketi, F4 two-stage split, F5
+  calibrated risk score, F6 sample validation. Detay ve gerekçeler
+  ilgili dokümanın §2 ve §11'inde.
+- 2026-04-29: **Prospector deprecate edildi**, AST + radon ile 7 klasik smell
+  (Fowler 1999, Lanza-Marinescu 2006). Sebep: pylint type-inference 1000-proje
+  scale'inde infeasible (~30 gün). Hız kazanımı ~1000x.
+  Prospector kodu silinmedi; sample validation için `--use-prospector` flag
+  arkasında kaldı.
+- 2026-04-29: **Random split tamamen kaldırıldı.** Two-stage protokol:
+  project-based 70/15/15 holdout (Tantithamthavorn 2017) + development pool
+  içinde 5-fold GroupKFold (model seçimi). Final test seti hyperparameter
+  tuning'de kullanılmaz.
+- 2026-04-29: **Risk score formülü AI-first.** Hand-tuned α·prob + β·CC +
+  γ·churn yerine isotonic-calibrated stacking ensemble (RF + AutoGluon → LR
+  meta) çıktısı. UI'da P70/P90 percentile eşikleriyle 3-tier (PASS/REVIEW/BLOCK).
+- 2026-04-29: **PR/Issue API entegrasyonu reddedildi**, git-log proxy'leri
+  kullanıldı (revert_count, inter_commit_time_cv, author_entropy,
+  bug_fix_density). Mockus 2010, Bird et al. 2009. 1000-proje scale'inde
+  rate-limit feasibility için.
+- 2026-04-30: F1-F6 commit'leri tamamlandı (`dedab59`...`263ff76`). 137 → 216
+  test, 9/13 checklist done. Bekleyen: F6 Cohen's kappa fiili koşum (Prospector
+  timeout sorunu), 50-projelik smoke test, 1000-projelik production run.
