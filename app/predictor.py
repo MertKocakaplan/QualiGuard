@@ -179,6 +179,21 @@ def predict_smell(features_df: pd.DataFrame):
     return preds, probs
 
 
+def predict_proba_calibrated(features_df: pd.DataFrame) -> np.ndarray:
+    """
+    Kalibre edilmis bug olasıligi — F5 risk score kaynagi.
+
+    Stacking cikisi (RF + AutoGluon -> isotonic-calibrated meta LR)
+    zaten kalibredir; bu fonksiyon temiz bir arayuz saglar.
+    Bug modeli yuklu degilse RuntimeError firlatir.
+
+    Returns:
+        1-D ndarray, her satirda [0, 1] bug olasıligi.
+    """
+    _, probs = predict_bug(features_df)
+    return probs
+
+
 def smell_available() -> bool:
     """Smell modeli models/ altinda mevcut mu?"""
     return (MODELS_DIR / "smell_rf.joblib").exists() and \

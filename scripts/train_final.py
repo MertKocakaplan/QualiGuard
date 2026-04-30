@@ -36,6 +36,7 @@ from typing import Optional
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import KFold
@@ -354,8 +355,9 @@ def train_bug(
         ).fit(tr_df, time_limit=autogluon_time_limit)
         ag_oof[va_idx] = p.predict_proba(va_df).iloc[:, 1].to_numpy()
 
-    # Meta-learner: OOF uzerinde LR
-    meta = LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)
+    # Meta-learner: OOF uzerinde kalibre LR (F5 — isotonic calibration)
+    meta_base = LogisticRegression(max_iter=2000, random_state=RANDOM_STATE)
+    meta = CalibratedClassifierCV(meta_base, method="isotonic", cv=3)
     meta.fit(np.c_[rf_oof, ag_oof], ytr)
 
     # Base modelleri tum train uzerine refit

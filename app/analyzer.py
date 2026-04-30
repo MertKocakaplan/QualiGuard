@@ -30,7 +30,7 @@ from pipeline.git_metrics import (
 from pipeline.static_metrics import calculate_derived, calculate_metrics
 
 from . import predictor
-from .health import compute_project_health, compute_smell_summary
+from .health import compute_project_health, compute_smell_summary, risk_tier
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,12 @@ def analyze_repo(
         smell_summary  = compute_smell_summary(file_results, rows, prospector_results)
 
         progress_callback(100, "Tamamlandi!")
+        # F5 — risk tier distribution for summary card
+        tier_counts = {"PASS": 0, "REVIEW": 0, "BLOCK": 0}
+        for f in file_results:
+            t = f.get("risk_tier", "PASS")
+            tier_counts[t] = tier_counts.get(t, 0) + 1
+
         return {
             "project_info":    project_info,
             "github_url":      github_url,
@@ -136,6 +142,10 @@ def analyze_repo(
                 "high_commit_risk": sum(1 for f in file_results if f["commit_pred"] == 1),
                 "has_bug_risk":     sum(1 for f in file_results if f["bug_pred"] == 1),
                 "has_smell_risk":   sum(1 for f in file_results if f.get("smell_pred") == 1),
+                # F5 — 3-tier quality gate counts
+                "risk_pass":   tier_counts["PASS"],
+                "risk_review": tier_counts["REVIEW"],
+                "risk_block":  tier_counts["BLOCK"],
             },
             "error":        None,
             "error_detail": None,
@@ -247,6 +257,8 @@ def _assemble_file_results(
     results = []
     for i, row in enumerate(rows):
         fpath = row["file_path"]
+        # F5 — risk_score: bug_prob kalibresini ana sinyal olarak kullan
+        r_score = round(float(bug_probs[i]), 4)
         entry = {
             "file_path":             fpath,
             "commit_pred":           int(commit_preds[i]),
@@ -256,6 +268,9 @@ def _assemble_file_results(
             "loc":                   int(row.get("loc", 0)),
             "cc_mean":               round(float(row.get("cc_mean") or 0), 2),
             "maintainability_index": round(float(row.get("maintainability_index") or 0), 1),
+            # F5 — risk score + 3-tier quality gate
+            "risk_score": r_score,
+            "risk_tier":  risk_tier(r_score),
         }
         if smell_preds is not None and smell_probs is not None:
             entry["smell_pred"] = int(smell_preds[i])

@@ -212,6 +212,7 @@
           <th>LOC</th>
           <th>CC Avg.</th>
           <th>MI</th>
+          <th>Risk Tier</th>
           <th>Commit Risk</th>
           <th>Commit Prob.</th>
           <th>Bug Risk</th>
@@ -224,7 +225,7 @@
           <th>Prospector</th>
           {% endif %}
           {# Hidden sort columns #}
-          <th></th><th></th><th></th><th></th>
+          <th></th><th></th><th></th><th></th><th></th>
           {% if show_smell %}<th></th><th></th>{% endif %}
           {% if show_prospector %}<th></th>{% endif %}
         </tr>
@@ -255,6 +256,18 @@
           <td>{{ f.loc }}</td>
           <td>{{ f.cc_mean }}</td>
           <td>{{ f.maintainability_index }}</td>
+
+          {# F5 — Risk Tier badge #}
+          <td class="dt-center">
+            {% set tier = f.get("risk_tier", "PASS") %}
+            {% if tier == "BLOCK" %}
+              <span class="badge badge-tier-block" title="Risk Score: {{ f.get('risk_score', 0) }}">BLOCK</span>
+            {% elif tier == "REVIEW" %}
+              <span class="badge badge-tier-review" title="Risk Score: {{ f.get('risk_score', 0) }}">REVIEW</span>
+            {% else %}
+              <span class="badge badge-tier-pass" title="Risk Score: {{ f.get('risk_score', 0) }}">PASS</span>
+            {% endif %}
+          </td>
 
           <td class="dt-center">
             {% if f.commit_pred == 1 %}
@@ -346,6 +359,7 @@
           {% endif %}
 
           {# Hidden numeric columns — DataTables reads these for sorting #}
+          <td>{{ f.get("risk_score", 0) }}</td>
           <td>{{ f.commit_pred }}</td>
           <td>{{ f.commit_prob }}</td>
           <td>{{ f.bug_pred }}</td>

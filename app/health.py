@@ -4,7 +4,8 @@ health.py — PLAN §17.1 Project Health + Smell Overview hesaplamalari.
 Flask analizi tamamlandiktan sonra UI'deki ozet kartlari icin
 toplam istatistikleri uretir. Sadece saf hesaplama — I/O yok.
 
-Iki genel fonksiyon:
+Uc genel fonksiyon:
+  - risk_tier(risk_score, p70, p90) -> "PASS" | "REVIEW" | "BLOCK"
   - compute_project_health(commit_summary, rows) -> dict
   - compute_smell_summary(file_results, rows, prospector_results=None) -> dict
 """
@@ -14,6 +15,36 @@ import logging
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ── F5 — Risk tier ────────────────────────────────────────────────
+
+_TIER_PASS   = "PASS"
+_TIER_REVIEW = "REVIEW"
+_TIER_BLOCK  = "BLOCK"
+
+
+def risk_tier(
+    risk_score: float,
+    p70: float = 0.30,
+    p90: float = 0.70,
+) -> str:
+    """
+    3-tier kalite kapisi (Tantithamthavorn et al. 2017).
+
+    Eslikleri veriden gelmeli; varsayilanlar (0.30 / 0.70) gelismis
+    egitim olmadan makul priors saglar.
+
+    Returns:
+        "PASS"   — dusuk risk (risk_score < p70)
+        "REVIEW" — orta risk  (p70 <= risk_score < p90)
+        "BLOCK"  — yuksek risk (risk_score >= p90)
+    """
+    if risk_score >= p90:
+        return _TIER_BLOCK
+    if risk_score >= p70:
+        return _TIER_REVIEW
+    return _TIER_PASS
 
 
 def compute_project_health(

@@ -6,7 +6,9 @@ Hicbir Flask veya pipeline modulune bagli degil — saf fonksiyon testi.
 """
 from __future__ import annotations
 
-from app.health import compute_project_health, compute_smell_summary
+import pytest
+
+from app.health import compute_project_health, compute_smell_summary, risk_tier
 
 
 # ── compute_project_health ───────────────────────────────────────
@@ -130,3 +132,40 @@ def test_smell_summary_zero_loc_density_safe():
     s = compute_smell_summary(fr, rows, prospector_results=pres)
     assert s["total_smells"] == 5
     assert s["smell_density_per_kloc"] == 0.0
+
+
+# ── F5 — risk_tier ──────────────────────────────────────────────
+
+def test_risk_tier_thresholds_default():
+    """Plan ornekleri: 0.1 -> PASS, 0.5 -> REVIEW, 0.95 -> BLOCK."""
+    assert risk_tier(0.10) == "PASS"
+    assert risk_tier(0.50) == "REVIEW"
+    assert risk_tier(0.95) == "BLOCK"
+
+
+def test_risk_tier_exact_boundaries():
+    """Esik degerleri: p70=0.30 REVIEW'a dahil, p90=0.70 BLOCK'a dahil."""
+    assert risk_tier(0.30) == "REVIEW"  # tam p70 -> REVIEW
+    assert risk_tier(0.70) == "BLOCK"   # tam p90 -> BLOCK
+    assert risk_tier(0.299) == "PASS"
+    assert risk_tier(0.699) == "REVIEW"
+
+
+def test_risk_tier_zero_and_one():
+    assert risk_tier(0.0) == "PASS"
+    assert risk_tier(1.0) == "BLOCK"
+
+
+def test_risk_tier_custom_thresholds():
+    """Ozel esikler: p70=0.5, p90=0.8"""
+    assert risk_tier(0.4,  p70=0.5, p90=0.8) == "PASS"
+    assert risk_tier(0.6,  p70=0.5, p90=0.8) == "REVIEW"
+    assert risk_tier(0.85, p70=0.5, p90=0.8) == "BLOCK"
+
+
+def test_risk_tier_score_in_unit_interval():
+    """risk_score [0,1] icinde kalmali — her deger gecerli bir tier vermeli."""
+    import numpy as np
+    for score in np.linspace(0.0, 1.0, 50):
+        tier = risk_tier(float(score))
+        assert tier in ("PASS", "REVIEW", "BLOCK"), f"Beklenmez tier: {tier} for {score}"

@@ -1000,6 +1000,10 @@ table.dataTable tbody tr:hover td {
 .badge-safe  { background: #00b89420; color: #007a62; }
 .badge-smell { background: #ea580c20; color: var(--smell-dk); }
 .badge-muted { background: #cbd5e140; color: var(--text-soft); }
+/* F5 — Risk tier badges */
+.badge-tier-pass   { background: #00b89420; color: #007a62;          font-weight: 600; }
+.badge-tier-review { background: #f59e0b20; color: #92400e;          font-weight: 600; }
+.badge-tier-block  { background: #d6303120; color: var(--danger);    font-weight: 700; letter-spacing:.03em; }
 
 .prospector-count {
   display: inline-block;
