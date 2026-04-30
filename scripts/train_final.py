@@ -50,12 +50,15 @@ from pipeline.config import (
     OUTPUT_DIR,
     ensure_runtime_dirs,
 )
+from sklearn.model_selection import GroupKFold
+
 from pipeline.model_utils import (
+    TwoStageSplit,
     apply_smote_train_only,
     classification_metrics,
     extract_xy,
     fit_scaler,
-    project_based_split,
+    two_stage_split,
 )
 from pipeline.project_stats import write_project_stats
 
@@ -187,13 +190,21 @@ def _prepare_splits(
     label_col: str,
     use_smote: bool,
 ) -> dict:
-    """Project-based 70/15/15 + scaler fit + opsiyonel SMOTE."""
+    """
+    Project-based 70/15/15 two-stage split + scaler fit + opsiyonel SMOTE.
+
+    F4 (Tantithamthavorn et al. 2017): train_dev bolumunde GroupKFold(5)
+    cv iteratoru de dondurulur; ablation ve HP tuning icin kullanilabilir.
+    """
     if label_col not in df.columns:
         raise KeyError(f"Etiket sutunu yok: {label_col}")
     if df[label_col].dropna().nunique() < 2:
         raise ValueError(f"Etiket tek sinifli, egitilemez: {label_col}")
 
-    train, val, test = project_based_split(df)
+    # F4 — two-stage split (Tantithamthavorn et al. 2017)
+    split = two_stage_split(df, val_frac=0.15, test_frac=0.15, seed=RANDOM_STATE)
+    train, val, test = split.train_dev, split.val, split.test
+
     Xtr, ytr = extract_xy(train, features, label_col)
     Xv,  yv  = extract_xy(val,   features, label_col)
     Xte, yte = extract_xy(test,  features, label_col)
@@ -214,13 +225,27 @@ def _prepare_splits(
         except ValueError as exc:
             smote_note = f"SMOTE atlandi: {exc}"
             logger.warning(smote_note)
+
+    # GroupKFold cv iteratoru — train_dev icinde HP tuning / ablation (F4)
+    # n_splits grup sayisindan fazla olamaz; cok az proje varsa devre disi
+    n_cv_groups = train["project_name"].nunique() if "project_name" in train.columns else 0
+    n_cv_splits = min(5, n_cv_groups)
+    if n_cv_splits >= 2:
+        cv        = GroupKFold(n_splits=n_cv_splits)
+        cv_groups = train["project_name"].to_numpy()
+        cv_iter   = list(cv.split(Xtr_s, ytr, groups=cv_groups))
+    else:
+        cv_iter = []
+
     return {
-        "scaler":  scaler,
-        "Xtr":     Xtr_s, "ytr":  ytr,
-        "Xv":      Xv_s,  "yv":   yv,
-        "Xte":     Xte_s, "yte":  yte,
-        "n_train": len(ytr), "n_val": len(yv), "n_test": len(yte),
-        "note":    smote_note,
+        "scaler":   scaler,
+        "Xtr":      Xtr_s,  "ytr":  ytr,
+        "Xv":       Xv_s,   "yv":   yv,
+        "Xte":      Xte_s,  "yte":  yte,
+        "n_train":  len(ytr), "n_val": len(yv), "n_test": len(yte),
+        "note":     smote_note,
+        "cv_iter":  cv_iter,   # GroupKFold(5) splits — ablation icin
+        "split":    split,     # TwoStageSplit — proje ID'leri dahil
     }
 
 

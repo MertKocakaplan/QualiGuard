@@ -9,7 +9,7 @@ SMOTE opsiyoneldir; `imbalanced-learn` kurulu degilse `apply_smote_train_only`
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Sequence
+from typing import Iterable, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
@@ -108,6 +108,82 @@ def extract_xy(
 
 
 # ── Split'ler ─────────────────────────────────────────────────────
+
+class TwoStageSplit(NamedTuple):
+    """
+    Project-based 70/15/15 holdout (Tantithamthavorn et al. 2017).
+
+    train_dev: kagit %70 — GroupKFold(5) burada calisir.
+    val:       kagit %15 — model secimi sonrasi tek seferlik.
+    test:      kagit %15 — final paper tablosu.
+    *_pids:    her bolumun proje isimleri dizisi.
+    """
+    train_dev:  pd.DataFrame
+    val:        pd.DataFrame
+    test:       pd.DataFrame
+    train_pids: np.ndarray
+    val_pids:   np.ndarray
+    test_pids:  np.ndarray
+
+
+def two_stage_split(
+    df: pd.DataFrame,
+    val_frac: float = 0.15,
+    test_frac: float = 0.15,
+    project_col: str = "project_name",
+    seed: int = 42,
+) -> TwoStageSplit:
+    """
+    Project-based 70/15/15 holdout — F4 (Tantithamthavorn et al. 2017).
+
+    Projeler project_col'a gore gruplandırilir; ayni projenin tum dosyalari
+    tek bir bolume duşer (veri sizdirmaz). Deterministik: seed sabit tutuldukca
+    ayni bolunum uretilir.
+
+    Args:
+        df:          Ham veri cercevesi. project_col zorunlu.
+        val_frac:    Validation icin proje orani (default 0.15).
+        test_frac:   Test icin proje orani (default 0.15).
+        project_col: Proje kimlik sutunu.
+        seed:        Rastgelelik tohumu.
+
+    Returns:
+        TwoStageSplit NamedTuple.
+
+    Raises:
+        ValueError: project_col yoksa veya train bolumu bos kalirsa.
+    """
+    if project_col not in df.columns:
+        raise ValueError(f"project_col bulunamadi: {project_col!r}")
+
+    projects = df[project_col].unique()
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(len(projects))
+    projects = projects[perm]
+
+    n = len(projects)
+    n_test = max(1, int(test_frac * n))
+    n_val  = max(1, int(val_frac  * n))
+
+    if n_test + n_val >= n:
+        raise ValueError(
+            f"val_frac={val_frac} + test_frac={test_frac} >= 1.0 — "
+            f"train bolumu bos kalir ({n} proje var)"
+        )
+
+    test_pids  = projects[:n_test]
+    val_pids   = projects[n_test:n_test + n_val]
+    train_pids = projects[n_test + n_val:]
+
+    return TwoStageSplit(
+        train_dev = df[df[project_col].isin(train_pids)].copy(),
+        val       = df[df[project_col].isin(val_pids)].copy(),
+        test      = df[df[project_col].isin(test_pids)].copy(),
+        train_pids = train_pids,
+        val_pids   = val_pids,
+        test_pids  = test_pids,
+    )
+
 
 def project_based_split(
     df: pd.DataFrame,

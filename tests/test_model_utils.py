@@ -278,3 +278,94 @@ def test_apply_smote_train_only_raises_import_error_when_module_missing(monkeypa
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(ImportError):
         mu.apply_smote_train_only(np.zeros((4, 2)), np.array([0, 0, 1, 1]))
+
+
+# ── F4 — two_stage_split ─────────────────────────────────────────
+
+def _large_df(n_projects: int = 20, rows_per: int = 5) -> pd.DataFrame:
+    """project_name + created_at + numeric cols."""
+    rng = np.random.default_rng(0)
+    rows = []
+    base_ts = pd.Timestamp("2024-01-01", tz="UTC")
+    for pi in range(n_projects):
+        for ri in range(rows_per):
+            rows.append({
+                "project_name": f"u/p{pi:03d}",
+                "created_at":   (base_ts + pd.Timedelta(days=pi * 5 + ri)).isoformat(),
+                "loc":          int(rng.integers(10, 500)),
+                "label_commit": int(rng.integers(0, 2)),
+            })
+    return pd.DataFrame(rows)
+
+
+def test_two_stage_split_proportions_correct():
+    """100 proje ile train ~70%, val ~15%, test ~15%."""
+    df = _large_df(n_projects=100, rows_per=3)
+    s = mu.two_stage_split(df, seed=42)
+    n = 100
+    # Project sayilari
+    assert abs(len(s.test_pids)  - int(0.15 * n)) <= 1
+    assert abs(len(s.val_pids)   - int(0.15 * n)) <= 1
+    tr_frac = len(s.train_pids) / n
+    assert 0.68 <= tr_frac <= 0.72
+
+
+def test_two_stage_split_no_project_overlap():
+    """Hicbir proje iki bolumde birden yer alamaz."""
+    df = _large_df(n_projects=30, rows_per=4)
+    s = mu.two_stage_split(df)
+    tr = set(s.train_pids)
+    va = set(s.val_pids)
+    te = set(s.test_pids)
+    assert tr.isdisjoint(va), f"train ∩ val = {tr & va}"
+    assert tr.isdisjoint(te), f"train ∩ test = {tr & te}"
+    assert va.isdisjoint(te), f"val ∩ test = {va & te}"
+    # Satirlar da sizmasin
+    tr_names = set(s.train_dev["project_name"])
+    va_names = set(s.val["project_name"])
+    te_names = set(s.test["project_name"])
+    assert tr_names.isdisjoint(va_names)
+    assert tr_names.isdisjoint(te_names)
+
+
+def test_two_stage_split_deterministic():
+    """Ayni seed → ayni proje bolunum."""
+    df = _large_df(n_projects=40, rows_per=3)
+    s1 = mu.two_stage_split(df, seed=7)
+    s2 = mu.two_stage_split(df, seed=7)
+    assert set(s1.train_pids) == set(s2.train_pids)
+    assert set(s1.val_pids)   == set(s2.val_pids)
+    assert set(s1.test_pids)  == set(s2.test_pids)
+
+
+def test_two_stage_split_different_seeds_differ():
+    """Farkli seed → farkli bolunum (olasilikla)."""
+    df = _large_df(n_projects=50, rows_per=2)
+    s1 = mu.two_stage_split(df, seed=1)
+    s2 = mu.two_stage_split(df, seed=999)
+    assert set(s1.train_pids) != set(s2.train_pids)
+
+
+def test_two_stage_split_all_rows_covered():
+    """train + val + test toplami orijinal satir sayisina esit olmali."""
+    df = _large_df(n_projects=20, rows_per=6)
+    s = mu.two_stage_split(df)
+    total = len(s.train_dev) + len(s.val) + len(s.test)
+    assert total == len(df)
+
+
+def test_two_stage_split_missing_col_raises():
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(ValueError):
+        mu.two_stage_split(df)
+
+
+def test_two_stage_split_returns_named_tuple():
+    """Donus degeri TwoStageSplit NamedTuple olmali."""
+    df = _large_df(n_projects=10, rows_per=3)
+    s = mu.two_stage_split(df)
+    assert isinstance(s, mu.TwoStageSplit)
+    # Alan isimleri
+    assert hasattr(s, "train_dev")
+    assert hasattr(s, "train_pids")
+    assert isinstance(s.train_pids, np.ndarray)
