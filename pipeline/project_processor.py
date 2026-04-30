@@ -147,7 +147,10 @@ def _row_from_file(
         "bug_kw_issue_count":   int(b.get("bug_kw_issue_count", 0)),
         "bug_kw_anomaly_count": int(b.get("bug_kw_anomaly_count", 0)),
 
-        # Process-history proxies — repo-level, her satira yansitilir (F3.5)
+        # Repo-level raporlama metrikleri (F3.3/F3.4) — ML feature degil
+        "refactor_ratio":       float(repo_summary.get("refactor_ratio", 0.0)),
+        "contribution_gini":    float(repo_summary.get("contribution_gini", 0.0)),
+        # Process-history proxies — ML feature (F3.5, FEATURES_COMMIT'te)
         "revert_count":         int(repo_summary.get("revert_count", 0)),
         "inter_commit_time_cv": float(repo_summary.get("inter_commit_time_cv", 0.0)),
         "author_entropy":       float(repo_summary.get("author_entropy", 0.0)),
@@ -216,6 +219,7 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         "complexity_density", "comment_per_function",
         "avg_function_length", "effort_per_line",
         "inter_commit_time_cv", "author_entropy", "bug_fix_density",  # F3.5
+        "refactor_ratio", "contribution_gini",  # F3.3/F3.4 — raporlama
     )
     int8_cols = ("bug_keyword",)
     # Nullable: bug_szz (Int8); smell sütunlari (Int32)

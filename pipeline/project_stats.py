@@ -90,6 +90,11 @@ def compute_project_stats(df: pd.DataFrame) -> dict[str, Any]:
                                                        pd.Series(dtype=float))),
         "bug_rate_szz":             _safe_rate(df.get("bug_szz",
                                                        pd.Series(dtype=float))),
+        # F3.3/F3.4 — repo-level (per-row ayni deger, ortalama = proje degeri)
+        "avg_refactor_ratio":       _safe_mean(df.get("refactor_ratio",
+                                                       pd.Series(dtype=float))),
+        "avg_contribution_gini":    _safe_mean(df.get("contribution_gini",
+                                                       pd.Series(dtype=float))),
     }
 
     # by_category — category_primary varsa
