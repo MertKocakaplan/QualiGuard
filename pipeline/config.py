@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Final
 
 # ── Proje kok yolu ─────────────────────────────────────────────────
-# Bu dosya Final/pipeline/config.py konumundadir.
-# parents[1] = Final (proje koku).
+# Bu dosya <proje-koku>/pipeline/config.py konumundadir.
+# parents[1] = proje koku.
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 OUTPUT_DIR: Final[Path]     = PROJECT_ROOT / "output"
