@@ -21,6 +21,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")  # headless: figurler diske kaydedilir, plt.show() bloklamaz
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -43,7 +45,13 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 RANDOM_STATE = 42
 
 # %% Hucre 2 - En guncel ablation sonuclarini oku
-abl_files = sorted(OUTPUT_DIR.glob("ablation_results_*.csv"))
+# 'LEAKY' veya benzer arsiv etiketli dosyalari hariç tut; mtime'a gore en yenisi.
+# (Alfabetik sortlama 'L' > '2' oldugu icin LEAKY.csv'yi yanlislikla seciyordu.)
+abl_files = sorted(
+    [p for p in OUTPUT_DIR.glob("ablation_results_*.csv")
+     if "LEAKY" not in p.name.upper()],
+    key=lambda p: p.stat().st_mtime,
+)
 if not abl_files:
     raise FileNotFoundError(
         "ablation_results_*.csv yok. Once `analysis/02_model_training.py` calistirin."
@@ -55,14 +63,19 @@ print(f"Kayit: {len(results)}")
 ok = results[results["status"] == "ok"].copy()
 print(f"'ok' statuslu: {len(ok)} / {len(results)}")
 
-# %% Hucre 3 - Bar chart: model bazinda ortalama F1 / PR-AUC / MCC
+# %% Hucre 3 - Bar chart: model bazinda EN IYI F1 / PR-AUC / MCC
+# NOT: Eskiden `.mean()` kullaniliyordu; smart pruning ile bazi modeller
+# yalniz "all" feature set'te calistigi (ornegin lightgbm, xgboost, mlp)
+# diger modeller (rf, autogluon, stacking) 4 feature set'te calistigi icin
+# ortalama yanli idi — kucuk feature_set'lerin dusuk F1'i ortalamayi cekiyordu.
+# `.max()` ile her modelin EN IYI konfigurasyonu gosterilir = adil karsilastirma.
 if len(ok):
     agg = (
         ok.groupby("model")[["f1", "pr_auc", "mcc", "accuracy"]]
-          .mean()
+          .max()
           .sort_values("f1", ascending=False)
     )
-    print("Model bazli ortalamalar:")
+    print("Model bazli EN IYI konfigurasyon metrikleri:")
     print(agg.round(3).to_string())
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
@@ -73,7 +86,7 @@ if len(ok):
     ):
         series = agg[metric].dropna().sort_values()
         series.plot(kind="barh", ax=ax, color=color, edgecolor="white")
-        ax.set_title(f"Model bazli ortalama {metric.upper()}")
+        ax.set_title(f"Model bazli en iyi {metric.upper()}")
         ax.set_xlim(0, 1)
         for i, v in enumerate(series.values):
             ax.text(v + 0.01, i, f"{v:.2f}", va="center")
@@ -146,8 +159,8 @@ if len(best_per_task) and filtered:
 
     task = str(row["task"])
     feat = str(row["feature_set"])
+    # NOT (V2.1): T1 commit kaldirildi; haritada birakilmadi.
     label_col_map = {
-        ("commit", "median"):  "label_commit",
         ("bug",    "keyword"): "bug_keyword",
         ("bug",    "szz"):     "bug_szz",
         ("smell",  "p80"):     "smell_binary",
@@ -211,11 +224,12 @@ if len(best_per_task) and filtered:
 else:
     print("Yeniden egitim icin filtered parquet ya da best_per_task yok.")
 
-# %% Hucre 7 - Random Forest feature importance (task=commit ornek)
+# %% Hucre 7 - Random Forest feature importance (task=bug ornek)
+# NOT (V2.1): T1 commit kaldirildi; bug task feature importance gosterilir.
 if len(filtered):
     df = pd.read_parquet(filtered[-1])
-    task = "commit"
-    label_col = "label_commit"
+    task = "bug"
+    label_col = "bug_keyword"
     if label_col in df.columns:
         features = get_feature_set(task, "all")
         train, _, _ = project_based_split(df)
@@ -244,11 +258,12 @@ else:
 # karakteristiklerini tablolar.
 if len(filtered):
     df = pd.read_parquet(filtered[-1])
-    if "label_commit" in df.columns:
+    # NOT (V2.1): T1 commit kaldirildi; bug task yanlis siniflandirma analizi.
+    if "bug_keyword" in df.columns:
         train, val, test = project_based_split(df)
-        features = get_feature_set("commit", "all")
-        Xtr, ytr = extract_xy(train, features, "label_commit")
-        Xte, yte = extract_xy(test,  features, "label_commit")
+        features = get_feature_set("bug", "all")
+        Xtr, ytr = extract_xy(train, features, "bug_keyword")
+        Xte, yte = extract_xy(test,  features, "bug_keyword")
         scaler = fit_scaler(Xtr)
         rf = RandomForestClassifier(n_estimators=200, n_jobs=-1,
                                     random_state=RANDOM_STATE)
@@ -281,4 +296,4 @@ if len(filtered):
              "loc", "commit_count"]].to_csv(out_csv, index=False)
         print(f"kaydedildi: {out_csv}")
     else:
-        print("label_commit yok, hata analizi atlandi.")
+        print("bug_keyword yok, hata analizi atlandi.")

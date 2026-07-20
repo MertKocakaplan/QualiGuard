@@ -23,7 +23,6 @@ Exit codes (PLAN §12.1):
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import signal
 import sys
@@ -59,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     """CLI parser — PLAN §12.1 ile uyumlu."""
     p = argparse.ArgumentParser(
         prog="scripts.collect",
-        description="MetricHunter V2 — Full veri toplama CLI (F1-F3).",
+        description="QualiGuard V2 — Full veri toplama CLI (F1-F3).",
     )
     p.add_argument("--target", type=int, default=DEFAULT_TARGET_COUNT,
                    help="Hedef proje sayisi")
@@ -128,7 +127,7 @@ def _print_dry_run(args: argparse.Namespace) -> None:
     """--dry-run: config'i ekrana bas, hicbir sey yazma."""
     token_note = "ayarli" if github_token_configured() else "YOK (rate limit cok dusuk)"
     print("=" * 60)
-    print("  MetricHunter V2 — scripts.collect  [--dry-run]")
+    print("  QualiGuard V2 — scripts.collect  [--dry-run]")
     print("=" * 60)
     print(f"  target           : {args.target}")
     print(f"  min-age-days     : {args.min_age_days}")
@@ -150,20 +149,15 @@ def _print_dry_run(args: argparse.Namespace) -> None:
 
 def _run_discovery(args: argparse.Namespace) -> int:
     """Discovery fazi — GitHub search + contributor filter."""
-    out_path = CHECKPOINT_DIR / "discovery.json"
-
     # Mevcut meta'yi oku — yeni run'dan once, sonradan merge icin
     existing_by_name: dict[str, dict] = {}
-    if out_path.exists():
-        try:
-            raw = json.loads(out_path.read_text(encoding="utf-8"))
-            existing_by_name = {
-                p["full_name"]: p
-                for p in raw.get("found", [])
-                if p.get("full_name")
-            }
-        except (json.JSONDecodeError, OSError):
-            pass
+    raw = checkpoint_mod.load_checkpoint("discovery")
+    if raw is not None:
+        existing_by_name = {
+            p["full_name"]: p
+            for p in raw.get("found", [])
+            if p.get("full_name")
+        }
 
     refresh_quota()
     quota = current_quota()
@@ -199,14 +193,12 @@ def _run_discovery(args: argparse.Namespace) -> int:
 
 def _load_discovered_projects() -> list[dict]:
     """discovery.json'dan bulunan proje listesini oku. Yoksa [] doner."""
-    path = CHECKPOINT_DIR / "discovery.json"
-    if not path.exists():
-        logger.error("discovery.json yok: %s (once --phase discovery calistir)", path)
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.error("discovery.json okunamadi: %s", exc)
+    data = checkpoint_mod.load_checkpoint("discovery")
+    if data is None:
+        logger.error(
+            "discovery.json yok veya bozuk: %s (once --phase discovery calistir)",
+            CHECKPOINT_DIR / "discovery.json",
+        )
         return []
     return list(data.get("found", []))
 

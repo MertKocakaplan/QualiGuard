@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}MetricHunter — Home{% endblock %}
+{% block title %}QualiGuard — Home{% endblock %}
 
 {% block content %}
 <div class="hero">
   <div class="card card-raised hero-card">
     <h1 class="hero-title">GitHub Repository Analysis</h1>
-    <p class="hero-sub">Commit frequency and bug risk prediction for your Python files</p>
+    <p class="hero-sub">Bug risk and code smell prediction for your Python files</p>
 
     {% if flash_message %}
     <div class="alert alert-warn" role="alert">{{ flash_message }}</div>
@@ -29,7 +29,23 @@
     </div>
     {% endif %}
 
-    <form id="analyzeForm" class="analyze-form" autocomplete="off" novalidate>
+    {# F7 — Iki kaynak: GitHub URL veya yerel ZIP yukleme #}
+    <div class="source-tabs" role="tablist" aria-label="Analysis source">
+      <button type="button" class="source-tab is-active"
+              role="tab" aria-selected="true"
+              data-tab="github" id="tabGithub">
+        GitHub URL
+      </button>
+      <button type="button" class="source-tab"
+              role="tab" aria-selected="false"
+              data-tab="upload" id="tabUpload">
+        Upload ZIP
+      </button>
+    </div>
+
+    <form id="analyzeForm" class="analyze-form source-panel is-active"
+          data-tab="github" autocomplete="off" novalidate
+          role="tabpanel" aria-labelledby="tabGithub">
       <div class="form-field">
         <label for="repoUrl" class="form-label">GitHub Repository URL</label>
         <div class="input-group">
@@ -55,19 +71,40 @@
         <p id="urlHint" class="input-hint">Example: https://github.com/pallets/flask</p>
         <p id="urlError" class="input-error hidden" role="alert" aria-live="polite"></p>
       </div>
+    </form>
 
-      <div class="form-options">
-        <label class="option-toggle" for="prospectorOpt">
-          <input type="checkbox"
-                 id="prospectorOpt"
-                 name="prospector"
-                 value="1"
-                 {% if not models_ready %}disabled{% endif %} />
-          <span class="option-toggle-text">
-            <strong>Run Prospector</strong>
-            <span class="option-hint">Deep code-smell scan (slower — adds ~1–5 min on large repos).</span>
-          </span>
-        </label>
+    <form id="uploadForm" class="analyze-form source-panel"
+          data-tab="upload" enctype="multipart/form-data" novalidate
+          role="tabpanel" aria-labelledby="tabUpload">
+      <div class="form-field">
+        <label for="zipInput" class="form-label">Repository ZIP file</label>
+        <div class="input-group">
+          <input
+            type="file"
+            id="zipInput"
+            name="zipfile"
+            class="input-file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            aria-describedby="zipHint zipError"
+            aria-required="true"
+            {% if not models_ready %}disabled aria-disabled="true"{% endif %}
+          />
+          <button
+            type="submit"
+            id="uploadBtn"
+            class="btn btn-primary"
+            {% if not models_ready %}disabled{% endif %}
+          >
+            Analyze
+          </button>
+        </div>
+        <p id="zipHint" class="input-hint">
+          Max 100 MB. The ZIP must contain the <code>.git/</code> directory
+          (bug &amp; commit prediction needs git history).
+          <br />
+          Example: <code>cd your-repo &amp;&amp; zip -r ../your-repo.zip .</code>
+        </p>
+        <p id="zipError" class="input-error hidden" role="alert" aria-live="polite"></p>
       </div>
     </form>
 
@@ -96,23 +133,17 @@
   </div>
 
   <div class="info-row" aria-label="Model information">
-    <div class="card card-raised info-card info-card-commit">
-      <div class="info-icon-text" aria-hidden="true">RF</div>
-      <div class="info-label">Commit Prediction</div>
-      <div class="info-val">Random Forest</div>
-      <div class="info-score">F1 = 0.654</div>
-    </div>
     <div class="card card-raised info-card info-card-bug">
       <div class="info-icon-text" aria-hidden="true">ST</div>
       <div class="info-label">Bug Prediction</div>
-      <div class="info-val">Stacking RF + AutoGluon</div>
-      <div class="info-score">F1 = 0.823</div>
+      <div class="info-val">Stacking LightGBM + AutoGluon → Calibrated LR</div>
+      <div class="info-score">F1 = 0.64 · weighted 0.94 (5-fold CV)</div>
     </div>
     <div class="card card-raised info-card info-card-smell">
       <div class="info-icon-text" aria-hidden="true">SM</div>
       <div class="info-label">Smell Prediction</div>
-      <div class="info-val">Random Forest + Prospector</div>
-      <div class="info-score">36 features · Radon + Git</div>
+      <div class="info-val">LightGBM (AST + Radon)</div>
+      <div class="info-score">F1 = 0.69 · weighted 0.83 (5-fold CV)</div>
     </div>
   </div>
 </div>

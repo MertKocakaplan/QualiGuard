@@ -26,7 +26,7 @@ CATEGORY_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
     "AI/ML": (
         "machine-learning", "deep-learning", "artificial-intelligence",
         "neural-network", "neural-networks", "ai", "ml", "generative-ai",
-        "foundation-model",
+        "foundation-model", "foundation-models",
         "nlp", "natural-language-processing", "computer-vision",
         "reinforcement-learning", "reinforcement", "supervised-learning",
         "unsupervised-learning", "transfer-learning", "federated-learning",
@@ -48,6 +48,42 @@ CATEGORY_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
         "ocr", "pose-estimation", "depth-estimation", "3d",
         "mlops", "mlflow", "wandb", "experiment-tracking", "model-serving",
         "model-deployment", "inference", "onnx", "triton", "bentoml",
+        # Modern AI/Agent ekosistemi (2023-2026 yayginlasanlar)
+        "agent", "agents", "agentic", "multi-agent", "ai-agent", "ai-agents",
+        "meta-agent", "agent-framework", "agent-to-agent", "a2a",
+        "tool-use", "tool-calling", "function-calling",
+        "world-model", "world-models",
+        "reasoning", "chain-of-thought", "cot", "in-context-learning", "icl",
+        # RL/finetune teknikleri
+        "grpo", "ppo", "dpo", "sft", "rlhf", "rlaif",
+        "fine-tuning", "finetuning", "pretraining", "pre-training",
+        "instruction-tuning", "distillation", "knowledge-distillation",
+        "lora", "qlora",
+        # Protokoller / model aileleri / arkitekt
+        "mcp", "model-context-protocol",
+        "claude", "gemini", "deepseek", "qwen", "qwen2", "qwen3",
+        "phi", "phi3", "llama2", "llama3", "llama4",
+        "vlm", "vla", "slm", "lvm", "mllm", "mllms",
+        "vision-language", "vision-language-model", "vision-language-models",
+        "vision-language-action",
+        "mixture-of-experts", "moe",
+        "prompt", "prompting", "prompt-engineering",
+        "image-generation", "video-generation", "code-generation",
+        "image-synthesis", "video-synthesis", "synthesis",
+        "image-understanding", "video-understanding", "spatial-understanding",
+        "flow-matching",
+        # Diffusion / image-gen ekosistemi
+        "comfyui", "controlnet", "lora-training",
+        "gaussian-splatting", "splatting", "nerf", "neural-rendering",
+        # Akademik konferans / bildiri tag'leri (paper code repo'lari)
+        "neurips", "iclr", "icml", "cvpr", "iccv", "eccv", "siggraph",
+        "aaai", "ijcai", "acl", "emnlp", "naacl", "corl",
+        # Diger modern terimler
+        "voice", "tts", "stt", "speech-synthesis",
+        "autoregressive", "latent-diffusion", "latent",
+        "imitation-learning", "behavior-cloning", "embodied", "embodied-ai",
+        "person-re-identification", "re-identification",
+        "spatial", "scene-understanding",
     ),
     "Web": (
         "django", "flask", "fastapi", "aiohttp", "tornado", "starlette",
@@ -135,6 +171,26 @@ CATEGORY_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
         "react-native", "flutter",
         "beeware", "briefcase",
         "push-notification", "mobile-ui",
+    ),
+    # Robotics — AI/ML alt-domain'i ama farkli arac/kutuphane ekosistemi.
+    # Iterasyon sirasinda AI/ML'den SONRA gelir; bu sayede VLA/embodied gibi
+    # hibrit projeler AI/ML primary'da kalir, sadece pure-robotics
+    # ("robot", "legged", "humanoid") projeler Robotics'e duser.
+    "Robotics": (
+        "robotics", "robot", "robotic", "robot-learning",
+        "humanoid", "humanoid-robot", "legged", "legged-locomotion",
+        "quadruped", "quadrupedal", "biped", "bipedal",
+        "manipulation", "robotic-manipulation", "dexterous", "dexterous-manipulation",
+        "locomotion", "motion-planning", "trajectory-optimization",
+        "ros", "ros2", "urdf", "sdf",
+        "mujoco", "pybullet", "isaac", "isaac-lab", "isaac-gym", "isaaclab", "isaacgym",
+        "robosuite", "drake", "gazebo",
+        "grasp", "grasping", "pick-and-place",
+        "drone", "uav", "quadcopter", "quadcopters",
+        "slam", "ekf-slam", "visual-slam", "lidar", "lidar-sensor",
+        "kinematics", "inverse-kinematics", "forward-kinematics",
+        "teleop", "teleoperation",
+        "autonomous-driving", "self-driving",
     ),
 }
 

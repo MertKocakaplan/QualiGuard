@@ -1,22 +1,26 @@
-# MetricHunter V2 — ignore patterns.
+# QualiGuard — ignore patterns. Repo yalniz kaynak kod icerir;
+# veri toplama + model egitimi klonlayan tarafindan sifirdan calistirilir.
 
-# Runtime ciktilari
+# Runtime ciktilari / veri (collect + train uretimi)
 output/
 repos/
 *.log
-
-# Model artifactlari (egitim sonrasi regenere edilir)
-models/*.joblib
-models/bug_ag_base/
-models/smell_*.joblib
-models/scaler_*.joblib
-models/project_stats.json
-# feature_names.json repo'da kalir — kodun beklentisi.
-!models/feature_names.json
-
-# Parquet / csv veri
 *.parquet
 *.csv.gz
+
+# Model artifactlari + config/manifest (egitim ile yeniden uretilir)
+models/
+
+# Dokumanlar / ic planlama (kaynak kod disi) — repoya girmez
+docs/
+*.docx
+*.rar
+PLAN.md
+CHANGELOG.md
+
+# Makale figur yardimcilari (araç kaynağı değil; hardcoded yollar iceriyor)
+scripts/make_fig1_architecture.py
+scripts/make_paper_figs.py
 
 # Python
 __pycache__/
@@ -32,9 +36,8 @@ venv/
 .venv/
 env/
 
-# VS Code — settings.json commit edilir, launch.json lokal
-.vscode/launch.json
-.vscode/*.local.json
+# VS Code (lokal editor ayarlari)
+.vscode/
 
 # Sirlar
 .env
@@ -50,6 +53,7 @@ Thumbs.db
 # Claude Code harness state (per-machine)
 .claude/
 
-# Graphify outputs ve interpreter pointer (regenere edilir)
+# Graphify (yalniz gelistirme kolayligi — repoya girmez)
 graphify-out/
-.graphify_python
+.graphify_*
+.graphifyignore

@@ -280,6 +280,11 @@ def search_projects(
                 continue
 
             created_at = item.get("created_at", "")
+            # F4 (filter_categorize) topics + description bekliyor; GitHub search
+            # API bu alanlari zaten donuyor — sadece extract ediyoruz.
+            # Olmadigi takdirde kategorizasyon project_name'a duser ve cogu
+            # proje "Diger" olur (V1 ile karsilastirildiginda gorulen sorun).
+            topics_raw = item.get("topics") or []
             found.append({
                 "full_name":         full_name,
                 "clone_url":         item.get("clone_url") or f"https://github.com/{full_name}.git",
@@ -288,6 +293,8 @@ def search_projects(
                 "project_age_days":  _calc_age_days(created_at),
                 "contributor_count": contributors,
                 "default_branch":    item.get("default_branch") or "main",
+                "topics":            [str(t) for t in topics_raw if t],
+                "description":       (item.get("description") or "").strip(),
             })
 
             if len(found) % DISCOVERY_FLUSH_EVERY == 0:

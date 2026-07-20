@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}MetricHunter — Results{% endblock %}
+{% block title %}QualiGuard — Results{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dataTables.min.css') }}" />
@@ -17,6 +17,9 @@
 {% set prospector_on   = result.get("prospector_enabled") if result else False %}
 {% set show_smell      = smell_model_available %}
 {% set show_prospector = prospector_on and smellsum.get("prospector_enabled") %}
+{# DataTables JS init icin — visible column count: File, LOC, CC, MI, Risk Tier,
+   Bug Risk, Bug Prob. (7) + (smell_risk, smell_prob = 2) + (prospector = 1). #}
+{% set visible_count   = 7 + (2 if show_smell else 0) + (1 if show_prospector else 0) %}
 
 {% if err %}
 {# ── Error screen ─────────────────────────────────────── #}
@@ -99,13 +102,6 @@
 
 {# Risk summary cards #}
 <div class="risk-row" aria-label="Risk summary">
-  <div class="card card-inset risk-card risk-commit">
-    <div class="risk-num">{{ summary.get("high_commit_risk", 0) }}</div>
-    <div class="risk-label">High Commit Risk Files</div>
-    <div class="risk-pct">
-      {{ ((summary.get("high_commit_risk", 0) / total) * 100) | round(1) }}%
-    </div>
-  </div>
   <div class="card card-inset risk-card risk-bug">
     <div class="risk-num">{{ summary.get("has_bug_risk", 0) }}</div>
     <div class="risk-label">Bug Risk Files</div>
@@ -154,6 +150,47 @@
 </div>
 {% endif %}
 
+{# F7 — DevOps practices (CI/CD signals) — Planning P6 #}
+{% set ci_cd = result.get("ci_cd", {}) if result else {} %}
+{% if ci_cd %}
+{% set ci_signals = [
+    ("has_github_actions", "GitHub Actions", "GHA"),
+    ("has_dockerfile",     "Dockerfile",     "DK"),
+    ("has_compose",        "Compose",        "CP"),
+    ("has_pre_commit",     "Pre-commit",     "PC"),
+    ("has_travis",         "Travis CI",      "TR"),
+    ("has_jenkins",        "Jenkins",        "JK"),
+    ("has_gitlab_ci",      "GitLab CI",      "GL"),
+] %}
+{% set active_count = ci_signals | selectattr(0) | map('first') | select('in', ci_cd | dictsort | rejectattr(1, 'equalto', false) | map(attribute=0) | list) | list | length %}
+<div class="devops-row" aria-label="DevOps practices">
+  <div class="card card-raised devops-card">
+    <div class="devops-header">
+      <div>
+        <span class="devops-title">DevOps Practices</span>
+        <span class="devops-sub">Filesystem signals — CI/CD pipeline + containerization + git hooks</span>
+      </div>
+      {% if ci_cd.get("is_devops_project") %}
+      <span class="badge badge-devops-yes" title="At least one DevOps signal detected">DevOps Project</span>
+      {% else %}
+      <span class="badge badge-devops-no" title="No DevOps tool files found at repo root">No DevOps Signal</span>
+      {% endif %}
+    </div>
+    <div class="devops-grid">
+      {% for key, label, abbr in ci_signals %}
+      {% set on = ci_cd.get(key) %}
+      <div class="devops-signal {% if on %}is-on{% else %}is-off{% endif %}"
+           title="{{ label }}: {{ 'Active' if on else 'Not detected' }}">
+        <span class="devops-abbr">{{ abbr }}</span>
+        <span class="devops-name">{{ label }}</span>
+        <span class="devops-state">{{ 'ON' if on else 'OFF' }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# Smell overview cards — prospector or ML model #}
 {% if show_smell or show_prospector %}
 <div class="smell-row" aria-label="Smell overview">
@@ -194,8 +231,8 @@
 </div>
 {% endif %}
 
-{# Visible: File, LOC, CC, MI, Commit Risk, Commit Prob, Bug Risk, Bug Prob, [Smell Risk, Smell Prob], [Prospector] #}
-{% set visible_count = 8 + (2 if show_smell else 0) + (1 if show_prospector else 0) %}
+{# Visible: File, LOC, CC, MI, Risk Tier, Bug Risk, Bug Prob, [Smell Risk, Smell Prob], [Prospector] #}
+{% set visible_count = 7 + (2 if show_smell else 0) + (1 if show_prospector else 0) %}
 
 {# Main results table #}
 <div class="card card-raised table-card">
@@ -213,8 +250,6 @@
           <th>CC Avg.</th>
           <th>MI</th>
           <th>Risk Tier</th>
-          <th>Commit Risk</th>
-          <th>Commit Prob.</th>
           <th>Bug Risk</th>
           <th>Bug Prob.</th>
           {% if show_smell %}
@@ -224,24 +259,26 @@
           {% if show_prospector %}
           <th>Prospector</th>
           {% endif %}
-          {# Hidden sort columns #}
-          <th></th><th></th><th></th><th></th><th></th>
-          {% if show_smell %}<th></th><th></th>{% endif %}
-          {% if show_prospector %}<th></th>{% endif %}
+          {# Hidden sort columns — DataTables raw numeric values icin DOM'da kalir #}
+          <th class="hidden-sort-col"></th>
+          <th class="hidden-sort-col"></th>
+          <th class="hidden-sort-col"></th>
+          {% if show_smell %}
+          <th class="hidden-sort-col"></th>
+          <th class="hidden-sort-col"></th>
+          {% endif %}
+          {% if show_prospector %}
+          <th class="hidden-sort-col"></th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
         {% for f in files %}
-        {% set commit_pct = (f.commit_prob * 100) | round(1) %}
         {% set bug_pct    = (f.bug_prob    * 100) | round(1) %}
         {% set smell_pct  = ((f.get("smell_prob") or 0) * 100) | round(1) %}
         {% set row_flags  = [] %}
-        {% if f.bug_pred == 1 and f.commit_pred == 1 %}
-          {% set row_cls = "row-both" %}
-        {% elif f.bug_pred == 1 %}
+        {% if f.bug_pred == 1 %}
           {% set row_cls = "row-bug" %}
-        {% elif f.commit_pred == 1 %}
-          {% set row_cls = "row-commit" %}
         {% else %}
           {% set row_cls = "" %}
         {% endif %}
@@ -270,29 +307,6 @@
           </td>
 
           <td class="dt-center">
-            {% if f.commit_pred == 1 %}
-              <span class="badge badge-high">High</span>
-            {% else %}
-              <span class="badge badge-low">Low</span>
-            {% endif %}
-          </td>
-
-          <td>
-            <div class="prob-wrap">
-              <div class="prob-track"
-                   role="progressbar"
-                   aria-valuenow="{{ commit_pct }}"
-                   aria-valuemin="0"
-                   aria-valuemax="100"
-                   aria-label="Commit probability {{ commit_pct }}%">
-                <div class="prob-bar prob-bar-commit"
-                     style="width:{{ commit_pct }}%"></div>
-              </div>
-              <span class="prob-txt">{{ commit_pct }}%</span>
-            </div>
-          </td>
-
-          <td class="dt-center">
             {% if f.bug_pred == 1 %}
               <span class="badge badge-bug">Bug</span>
             {% else %}
@@ -317,10 +331,39 @@
 
           {% if show_smell %}
           <td class="dt-center">
+            {# F7 — AST smell breakdown — kisaltma + sayim, tooltip tam aciklama #}
+            {% set sb = f.get("smell_breakdown") or {} %}
+            {% set smell_labels = {
+                "long_method":         ("LM", "Long Method: %d function(s) > 50 LOC"),
+                "large_class":         ("LC", "Large Class: %d class(es) > 500 LOC with >=10 methods"),
+                "long_param_list":     ("LP", "Long Parameter List: %d function(s) with > 5 params"),
+                "deep_nesting":        ("DN", "Deep Nesting: %d function(s) with nesting > 4"),
+                "high_complexity":     ("HC", "High Complexity: %d function(s) with radon CC > 10"),
+                "low_maintainability": ("MI", "Low Maintainability Index (file MI < 20)"),
+                "god_function":        ("GF", "God Function: %d function(s) with CC > 15 AND LOC > 80"),
+            } %}
+            {% set sb_parts = [] %}
+            {% for sk, (abbr, tpl) in smell_labels.items() %}
+              {% if sb.get(sk, 0) > 0 %}
+                {% set _ = sb_parts.append(abbr ~ "=" ~ sb[sk]) %}
+              {% endif %}
+            {% endfor %}
+            {% set sb_tip = "AST smells: " ~ (sb_parts | join(", ")) if sb_parts else "No AST-based smell detected" %}
             {% if f.get("smell_pred") == 1 %}
-              <span class="badge badge-smell">Smelly</span>
+              <span class="badge badge-smell" title="{{ sb_tip }}">Smelly</span>
+              {% if sb_parts %}
+              <div class="smell-mini-list" aria-label="Smell breakdown">
+                {% for sk, (abbr, tpl) in smell_labels.items() %}
+                  {% if sb.get(sk, 0) > 0 %}
+                  <span class="smell-mini-tag" title="{{ tpl % sb[sk] if '%d' in tpl else tpl }}">
+                    {{ abbr }}={{ sb[sk] }}
+                  </span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% endif %}
             {% elif f.get("smell_pred") == 0 %}
-              <span class="badge badge-safe">Clean</span>
+              <span class="badge badge-safe" title="{{ sb_tip }}">Clean</span>
             {% else %}
               <span class="badge badge-muted">–</span>
             {% endif %}
@@ -358,18 +401,16 @@
           </td>
           {% endif %}
 
-          {# Hidden numeric columns — DataTables reads these for sorting #}
-          <td>{{ f.get("risk_score", 0) }}</td>
-          <td>{{ f.commit_pred }}</td>
-          <td>{{ f.commit_prob }}</td>
-          <td>{{ f.bug_pred }}</td>
-          <td>{{ f.bug_prob }}</td>
+          {# Hidden numeric columns — DataTables reads these for sorting (CSS display:none) #}
+          <td class="hidden-sort-col">{{ f.get("risk_score", 0) }}</td>
+          <td class="hidden-sort-col">{{ f.bug_pred }}</td>
+          <td class="hidden-sort-col">{{ f.bug_prob }}</td>
           {% if show_smell %}
-          <td>{{ f.get("smell_pred", -1) }}</td>
-          <td>{{ f.get("smell_prob", 0) }}</td>
+          <td class="hidden-sort-col">{{ f.get("smell_pred", -1) }}</td>
+          <td class="hidden-sort-col">{{ f.get("smell_prob", 0) }}</td>
           {% endif %}
           {% if show_prospector %}
-          <td>{{ f.get("prospector_count", -1) }}</td>
+          <td class="hidden-sort-col">{{ f.get("prospector_count", -1) }}</td>
           {% endif %}
 
         </tr>
@@ -394,31 +435,31 @@ $(document).ready(function () {
   var showProspector = {{ 'true' if show_prospector else 'false' }};
 
   // Hidden indices follow visible columns in order:
-  // commit_pred, commit_prob, bug_pred, bug_prob, [smell_pred, smell_prob], [prospector_count]
+  // risk_score, bug_pred, bug_prob, [smell_pred, smell_prob], [prospector_count]
+  // NOT (V2.1): T1 commit kaldirildigi icin commit_pred/commit_prob yok.
   var hiddenStart    = visibleCount;
-  var iCommitPred    = hiddenStart;
-  var iCommitProb    = hiddenStart + 1;
-  var iBugPred       = hiddenStart + 2;
-  var iBugProb       = hiddenStart + 3;
-  var iSmellPred     = showSmell ? hiddenStart + 4 : -1;
-  var iSmellProb     = showSmell ? hiddenStart + 5 : -1;
+  var iRiskScore     = hiddenStart;
+  var iBugPred       = hiddenStart + 1;
+  var iBugProb       = hiddenStart + 2;
+  var iSmellPred     = showSmell ? hiddenStart + 3 : -1;
+  var iSmellProb     = showSmell ? hiddenStart + 4 : -1;
   var iProspector    = showProspector
-                       ? hiddenStart + (showSmell ? 6 : 4)
+                       ? hiddenStart + (showSmell ? 5 : 3)
                        : -1;
 
   // Visible column index map
-  var vCommitRisk = 4, vCommitProb = 5, vBugRisk = 6, vBugProb = 7;
-  var vSmellRisk = showSmell ? 8 : -1;
-  var vSmellProb = showSmell ? 9 : -1;
+  // 0: File, 1: LOC, 2: CC, 3: MI, 4: Risk Tier, 5: Bug Risk, 6: Bug Prob
+  var vRiskTier = 4, vBugRisk = 5, vBugProb = 6;
+  var vSmellRisk = showSmell ? 7 : -1;
+  var vSmellProb = showSmell ? 8 : -1;
   var vProspector = showProspector
-                    ? (showSmell ? 10 : 8)
+                    ? (showSmell ? 9 : 7)
                     : -1;
 
   var columnDefs = [
     { targets: [0],       className: "file-col"       },
     { targets: [1, 2, 3], type: "num"                 },
-    { targets: [vCommitRisk], orderData: [iCommitPred]                 },
-    { targets: [vCommitProb], orderData: [iCommitProb], type: "num-fmt" },
+    { targets: [vRiskTier],   orderData: [iRiskScore], type: "num-fmt" },
     { targets: [vBugRisk],    orderData: [iBugPred]                    },
     { targets: [vBugProb],    orderData: [iBugProb],    type: "num-fmt" }
   ];
@@ -431,7 +472,7 @@ $(document).ready(function () {
   }
 
   // Hide numeric sort columns
-  var hiddenTargets = [iCommitPred, iCommitProb, iBugPred, iBugProb];
+  var hiddenTargets = [iRiskScore, iBugPred, iBugProb];
   if (showSmell)      hiddenTargets.push(iSmellPred, iSmellProb);
   if (showProspector) hiddenTargets.push(iProspector);
   columnDefs.push({ targets: hiddenTargets, visible: false, type: "num" });

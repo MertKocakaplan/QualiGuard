@@ -32,7 +32,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from pipeline import cloning, code_smells, git_metrics, static_metrics, szz
+from pipeline import ci_cd, cloning, code_smells, git_metrics, static_metrics, szz
 from pipeline.config import (
     FEATURES_BUG,
     PROJECTS_DIR,
@@ -109,6 +109,7 @@ def _row_from_file(
     bug_szz_map: dict[str, int],
     smell_map: dict[str, dict],
     repo_summary: dict,
+    ci_cd_signals: dict[str, bool],
     include_szz: bool,
     include_smells: bool,
 ) -> Optional[dict[str, Any]]:
@@ -129,6 +130,11 @@ def _row_from_file(
         "stars":             int(project.get("stars") or 0),
         "contributor_count": int(project.get("contributor_count") or 0),
         "project_age_days":  int(project.get("project_age_days") or 0),
+
+        # Discovery meta — analysis/02 time-based split icin kritik (created_at)
+        # ve kategorizasyon icin (description+topics dataset_builder'da merge edilir)
+        "created_at":        str(project.get("created_at", "")),
+        "description":       str(project.get("description", "")),
 
         "commit_count":         int(b.get("commit_count", 0)),
         "bug_count":            int(b.get("bug_count", 0)),
@@ -155,6 +161,17 @@ def _row_from_file(
         "inter_commit_time_cv": float(repo_summary.get("inter_commit_time_cv", 0.0)),
         "author_entropy":       float(repo_summary.get("author_entropy", 0.0)),
         "bug_fix_density":      float(repo_summary.get("bug_fix_density", 0.0)),
+
+        # CI/CD detection — Planning P6, DevOps practice gostergesi
+        # Her sinyal proje-bazinda; tum dosya satirlarina replike edilir
+        "has_github_actions":   bool(ci_cd_signals.get("has_github_actions", False)),
+        "has_travis":           bool(ci_cd_signals.get("has_travis", False)),
+        "has_jenkins":          bool(ci_cd_signals.get("has_jenkins", False)),
+        "has_gitlab_ci":        bool(ci_cd_signals.get("has_gitlab_ci", False)),
+        "has_dockerfile":       bool(ci_cd_signals.get("has_dockerfile", False)),
+        "has_compose":          bool(ci_cd_signals.get("has_compose", False)),
+        "has_pre_commit":       bool(ci_cd_signals.get("has_pre_commit", False)),
+        "is_devops_project":    bool(ci_cd_signals.get("is_devops_project", False)),
 
         # Etiketler
         "bug_keyword":          1 if b.get("bug_count", 0) > 0 else 0,
@@ -246,6 +263,22 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int32")
 
+    # String meta kolonlari — analysis/02 time_based_split bunlari kullanir,
+    # categorize de description ile keyword arar.
+    string_cols = ("created_at", "description")
+    for col in string_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype("string")
+
+    # CI/CD boolean sinyalleri (Planning P6) — bool dtype zorla
+    ci_cd_bool_cols = (
+        "has_github_actions", "has_travis", "has_jenkins", "has_gitlab_ci",
+        "has_dockerfile", "has_compose", "has_pre_commit", "is_devops_project",
+    )
+    for col in ci_cd_bool_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype("bool")
+
     return df
 
 
@@ -328,6 +361,10 @@ def process_project(
     repo_summary = git_metrics.get_repo_commit_summary(repo_path)
     timings["git_secs"] = round(time.monotonic() - t0, 1)
 
+    # 3b) CI/CD signals — Planning P6, DevOps practice gostergesi
+    # Cok hizli filesystem kontrolleri (~10ms), ek timing kategorisi acmaya gerek yok
+    ci_cd_signals = ci_cd.detect_ci_cd_signals(repo_path)
+
     # 4) Statik metrikler (her dosya icin)
     t0 = time.monotonic()
     static_map: dict[str, dict] = {}
@@ -407,6 +444,7 @@ def process_project(
             bug_szz_map=bug_szz_map,
             smell_map=smell_by_rel,
             repo_summary=repo_summary,
+            ci_cd_signals=ci_cd_signals,
             include_szz=not skip_szz,
             include_smells=not _skip_smells,
         )

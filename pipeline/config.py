@@ -1,5 +1,5 @@
 """
-config.py — MetricHunter V2 sabitleri, esikler, yol ve tool ayarlari.
+config.py — QualiGuard V2 sabitleri, esikler, yol ve tool ayarlari.
 
 Tum magic number/string degerleri buraya toplanir. Diger modullerden
 absolute import ile kullanilir:
@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Final
 
 # ── Proje kok yolu ─────────────────────────────────────────────────
-# Bu dosya Final/v2/pipeline/config.py konumundadir.
-# parents[1] = Final/v2 (proje koku).
+# Bu dosya Final/pipeline/config.py konumundadir.
+# parents[1] = Final (proje koku).
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 OUTPUT_DIR: Final[Path]     = PROJECT_ROOT / "output"
@@ -25,6 +25,38 @@ FIGURES_DIR: Final[Path]    = OUTPUT_DIR / "figures"
 REPOS_DIR: Final[Path]      = PROJECT_ROOT / "repos"
 MODELS_DIR: Final[Path]     = PROJECT_ROOT / "models"
 ARCHIVE_DIR: Final[Path]    = PROJECT_ROOT / "archive"
+
+
+# ── .env loader (modul yuklenirken bir kez calisir) ───────────────
+# pipeline.config'i import eden TUM girdi noktalari (run.py, scripts.collect,
+# analysis/*.py, tests) otomatik olarak proje kokundeki .env'i ortama yukler.
+# Idempotent: zaten os.environ'da olan key'lerin uzerine yazmaz.
+
+def _load_dotenv(env_path: Path = PROJECT_ROOT / ".env") -> None:
+    """
+    Proje kokundeki .env'i os.environ'a yukle. Dosya yoksa veya bozuksa
+    sessizce gec; ekrana hata basmaz.
+
+    Format: KEY=value (her satir, tirnaklar opsiyonel, # ile yorum).
+    """
+    if not env_path.exists():
+        return
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass  # Bozuk dosya / izin hatasi — sessizce devam
+
+
+_load_dotenv()
 
 
 def ensure_runtime_dirs() -> None:
@@ -110,7 +142,10 @@ SMELL_BINARY_PERCENTILE: Final[int]    = 80
 
 
 # ── Feature sutun siralari ────────────────────────────────────────
-# T1 commit (35 ozellik) — proje + statik + turetilmis + cognitive + repo-history
+# FEATURES_COMMIT (35 ozellik) — proje + statik + turetilmis + cognitive + repo-history.
+# NOT: V2.1'de T1 commit standalone task'i kaldirildi (quality gate odagi yok).
+# Bu tuple "temel feature seti" olarak korunuyor cunku FEATURES_BUG ve
+# FEATURES_SMELL bunun ustune eklenerek tanimlaniyor. Ismi tarihsel.
 FEATURES_COMMIT: Final[tuple[str, ...]] = (
     "loc", "lloc", "sloc", "comments", "multi", "blank", "single_comments",
     "cc_mean", "cc_max", "cc_total", "num_functions",
@@ -132,16 +167,78 @@ FEATURES_PROCESS: Final[tuple[str, ...]] = (
     "churn_total", "avg_churn_per_commit", "max_single_churn",
     "recent_commits_90d",
 )
-FEATURES_BUG: Final[tuple[str, ...]] = FEATURES_COMMIT + (
-    "commit_count", "n_authors", "file_age_days",
-    "churn_total", "avg_churn_per_commit", "max_single_churn",
+# T2 bug — bug_kw_*_count'lar burada YOK: bug_keyword label tanimi
+# (bug_count = sum(bug_kw_*_count) > 0) bu sutunlardan turedigi icin
+# modele dahil edilmeleri label leakage'a yol acar (F1 ~%99'a yapay siçrar).
+# Bug_szz da yuksek olasilikla ayni commit'lerden turetildigi icin riskli.
+# Smell ise farkli (label smell_count'tan turer); bug_kw_*'lar smell tahmininde
+# dogal korelasyondur (Tantithamthavorn et al. 2017) — FEATURES_SMELL'de tutulur.
+FEATURES_BUG: Final[tuple[str, ...]] = (
+    "loc",
+    "multi",
+    "single_comments",
+    "cc_mean",
+    "cc_max",
+    "cc_total",
+    "num_functions",
+    "h_volume",
+    "maintainability_index",
+    "comment_ratio",
+    "doc_ratio",
+    "complexity_density",
+    "comment_per_function",
+    "avg_function_length",
+    "effort_per_line",
+    "stars",
+    "contributor_count",
+    "project_age_days",
+    "cognitive_complexity_total",
+    "cognitive_complexity_max",
+    "revert_count",
+    "inter_commit_time_cv",
+    "author_entropy",
+    "bug_fix_density",
+    "commit_count",
+    "n_authors",
+    "file_age_days",
+    "churn_total",
+    "avg_churn_per_commit",
+    "max_single_churn",
     "recent_commits_90d",
-    # F3.2 — bug keyword separation (Antoniol et al. 2008)
-    "bug_kw_fix_count", "bug_kw_bug_count", "bug_kw_error_count",
-    "bug_kw_defect_count", "bug_kw_issue_count", "bug_kw_anomaly_count",
 )
-# T3 smell — T2 ile ayni ozellik seti
-FEATURES_SMELL: Final[tuple[str, ...]] = FEATURES_BUG
+# T3 smell — FEATURES_BUG + bug keyword separation
+# (Antoniol et al. 2008'in ayrik kategorileri; bug-prone <-> smell-prone
+# ilişkisi Tantithamthavorn 2017'ye gore meşru korelasyondur, leak değil)
+FEATURES_SMELL: Final[tuple[str, ...]] = (
+    "lloc",
+    "comments",
+    "multi",
+    "cc_mean",
+    "cc_max",
+    "num_functions",
+    "h_volume",
+    "h_effort",
+    "maintainability_index",
+    "comment_ratio",
+    "doc_ratio",
+    "complexity_density",
+    "comment_per_function",
+    "avg_function_length",
+    "stars",
+    "contributor_count",
+    "project_age_days",
+    "cognitive_complexity_total",
+    "cognitive_complexity_max",
+    "inter_commit_time_cv",
+    "author_entropy",
+    "bug_fix_density",
+    "commit_count",
+    "file_age_days",
+    "churn_total",
+    "avg_churn_per_commit",
+    "max_single_churn",
+    "bug_kw_anomaly_count",
+)
 
 
 # ── Logging ────────────────────────────────────────────────────────

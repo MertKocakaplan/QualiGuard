@@ -1,5 +1,5 @@
 """
-pipeline/ — MetricHunter V2 veri toplama ve etiketleme modulleri.
+pipeline/ — QualiGuard V2 veri toplama ve etiketleme modulleri.
 
 Alt modul ozeti:
     config              : Sabitler ve esikler

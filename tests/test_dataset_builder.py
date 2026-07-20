@@ -80,11 +80,29 @@ def test_add_dynamic_smell_binary_all_na_skip_prospector(project_files):
 
 def test_add_commit_label_uses_global_median(project_files):
     rows = [{"commit_count": c, "smell_count": 0} for c in [1, 2, 3, 10, 100]]
-    # median = 3; >=3 → 1
+    # median = 3; strict ">3" → 1 (median esiti negatif, "high-activity files")
     _write_project_parquet(project_files / "x.parquet", "u/x", rows)
     df = dataset_builder.load_project_parquets()
     df = dataset_builder.add_commit_label(df)
-    assert df["label_commit"].tolist() == [0, 0, 1, 1, 1]
+    assert df["label_commit"].tolist() == [0, 0, 0, 1, 1]
+
+
+def test_add_commit_label_skewed_data_not_trivial(project_files):
+    """
+    Veri commit_count uzerinde cok skewed olsa bile (median=1, P75=1) strict
+    ">" sayesinde label_commit %0'a ya da %100'e patlamaz. Regresyon testi:
+    eski "≥ median" davranisi bu durumda %100 pos veriyordu.
+    """
+    rows = [{"commit_count": c, "smell_count": 0}
+            for c in [1, 1, 1, 1, 1, 1, 2, 5, 20]]  # median=1
+    _write_project_parquet(project_files / "y.parquet", "u/y", rows)
+    df = dataset_builder.load_project_parquets()
+    df = dataset_builder.add_commit_label(df)
+    pos = int(df["label_commit"].sum())
+    # 2,5,20 pozitif; medyan-esiti 1'ler negatif kalir
+    assert pos == 3
+    assert pos < len(df), "tum satirlar pozitif olmamali (trivial label)"
+    assert pos > 0, "hicbir satir pozitif degil — esik mantigi bozuk"
 
 
 def test_build_full_dataset_writes_parquet(project_files, tmp_path):

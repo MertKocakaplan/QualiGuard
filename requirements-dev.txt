@@ -1,4 +1,4 @@
-# MetricHunter V2 — Pipeline / analiz / test icin full set.
+# QualiGuard V2 — Pipeline / analiz / test icin full set.
 # Uretim kurulumu icin once requirements.txt'yi kurun, sonra bunu.
 
 -r requirements.txt
@@ -21,6 +21,12 @@ lightgbm>=4.1
 # autogluon ve tensorflow opsiyonel — ortama gore elle kurun
 # autogluon.tabular>=1.1
 # tensorflow>=2.15
+
+# Task 3b AutoML alternatifleri — analysis/07_automl_baseline_cv.py icin gerekli
+# H2O: JVM tabanli, ~5-10 dk/fit (5 fold × 2 task ≈ 50-100 dk total)
+# TPOT: genetik algoritma, max_time_mins=10 sıkı cap; sanity-then-promote stratejisi
+h2o>=3.46
+tpot>=0.12
 
 # Progress bar
 tqdm>=4.66

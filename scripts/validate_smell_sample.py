@@ -272,7 +272,7 @@ def validate(
 
     lines = [
         "=" * 60,
-        "MetricHunter — Smell Validation Report (F6)",
+        "QualiGuard — Smell Validation Report (F6)",
         "=" * 60,
         f"Total files sampled  : {n_total}",
         f"AST analysis errors  : {ast_errors}",

@@ -5,7 +5,7 @@
 #
 # Ablation boyutlari (PLAN §4.3):
 #
-#   - Gorev: T1 commit / T2 bug / T3 smell
+#   - Gorev: T2 bug / T3 smell  (T1 commit V2.1'de kaldirildi)
 #   - Label varyanti (T2): keyword / szz
 #   - Feature seti: static / derived / process / all
 #   - Split: project-based (primary) / time-based (secondary)
@@ -77,8 +77,9 @@ print(f"Proje  : {df['project_name'].nunique() if 'project_name' in df else 0}")
 # Her bir kombinasyon bir satir uretir. Gerekirse bu sozlugu duzenleyin.
 ABLATION: dict = {
     # Gorev + kullanilacak etiket sutunu
+    # NOT (V2.1): T1 commit standalone task'i kaldirildi; label_commit sutunu
+    # dataset'te durabilir ama ablation'da egitilmez.
     "tasks": [
-        {"name": "commit", "label_col": "label_commit", "label_variant": "median"},
         {"name": "bug",    "label_col": "bug_keyword",  "label_variant": "keyword"},
         {"name": "bug",    "label_col": "bug_szz",      "label_variant": "szz"},
         {"name": "smell",  "label_col": "smell_binary", "label_variant": "p80"},
@@ -91,7 +92,7 @@ ABLATION: dict = {
     "models": [
         "lr", "rf", "svm",
         "xgboost", "lightgbm",
-        "autogluon",
+        "autogluon", "h2o", "tpot",
         "mlp", "cnn1d", "lstm",
         "stacking_rf_ag_meta_lr",
     ],
@@ -100,11 +101,13 @@ ABLATION: dict = {
     "prune_models_on_small_feature_sets": True,
     "small_feature_model_subset": ["rf", "autogluon", "stacking_rf_ag_meta_lr"],
     # SMOTE train-only (azinlik sinifini dengeler)
-    "use_smote": True,
+    # NOT (V2.1): default False — organik veri kullanim politikasi.
+    # Eski ablation_results_*.csv'ler SMOTE=True ile uretilmis olabilir.
+    "use_smote": False,
 }
 print(f"Toplam kombinasyon (kaba): "
-      f"{len(ABLATION['tasks']) * len(ABLATION['feature_sets']) "
-      f"* len(ABLATION['splits']) * len(ABLATION['models'])}")
+      f"{ len(ABLATION['tasks']) * len(ABLATION['feature_sets'])}",
+      f"{ len(ABLATION['splits']) * len(ABLATION['models'])}")
 
 # %% Hucre 4 - Model fabrikalari (opsiyonel bagimliliklar try/except ile)
 
@@ -290,6 +293,70 @@ def model_lstm(Xtr, ytr, Xte) -> ModelRun:
     return _keras_run(_keras_lstm, Xtr, ytr, Xte, reshape_3d=True)
 
 
+def model_h2o(Xtr, ytr, Xte) -> ModelRun:
+    try:
+        import h2o  # type: ignore[import-not-found]
+        from h2o.automl import H2OAutoML  # type: ignore[import-not-found]
+    except ImportError as exc:
+        return ModelRun(status="skipped", error=f"h2o yok: {exc}")
+    import tempfile
+
+    def _run():
+        h2o.init(nthreads=-1, max_mem_size="4G", verbose=False)
+        feat_cols = [f"f{i}" for i in range(Xtr.shape[1])]
+        train_df = pd.DataFrame(Xtr, columns=feat_cols)
+        train_df["target"] = ytr
+        test_df = pd.DataFrame(Xte, columns=feat_cols)
+
+        h_train = h2o.H2OFrame(train_df)
+        h_test  = h2o.H2OFrame(test_df)
+        h_train["target"] = h_train["target"].asfactor()
+
+        aml = H2OAutoML(
+            max_runtime_secs=600, max_models=20,
+            seed=RANDOM_STATE, verbosity="warn",
+        )
+        aml.train(x=feat_cols, y="target", training_frame=h_train)
+
+        preds = aml.leader.predict(h_test).as_data_frame()
+        y_pred  = preds["predict"].astype(int).values
+        y_proba = preds["p1"].values if "p1" in preds.columns else None
+
+        h2o.remove_all()
+        h2o.cluster().shutdown(prompt=False)
+        return ModelRun(y_pred=y_pred, y_proba=y_proba,
+                        notes={"automl": "h2o", "max_runtime_secs": 600})
+    return _time_it(_run)
+
+
+def model_tpot(Xtr, ytr, Xte) -> ModelRun:
+    try:
+        from tpot import TPOTClassifier  # type: ignore[import-not-found]
+    except ImportError as exc:
+        return ModelRun(status="skipped", error=f"tpot yok: {exc}")
+
+    def _run():
+        tpot = TPOTClassifier(
+            search_space="linear-light",
+            scorers=["f1_weighted"],
+            scorers_weights=[1],
+            max_time_mins=10,
+            max_eval_time_mins=1,
+            n_jobs=1,
+            verbose=0,
+            random_state=RANDOM_STATE,
+        )
+        tpot.fit(Xtr, ytr)
+        y_pred = tpot.predict(Xte)
+        try:
+            y_proba = tpot.predict_proba(Xte)[:, 1]
+        except Exception:
+            y_proba = None
+        return ModelRun(y_pred=y_pred, y_proba=y_proba,
+                        notes={"automl": "tpot", "max_time_mins": 10})
+    return _time_it(_run)
+
+
 def model_stacking_rf_ag_meta_lr(Xtr, ytr, Xte) -> ModelRun:
     """RF + AutoGluon base, LR meta-learner. V1 hibrit pattern'inden uyarlama."""
     try:
@@ -352,9 +419,12 @@ MODEL_REGISTRY: dict[str, ModelFn] = {
     "xgboost":                 model_xgboost,
     "lightgbm":                model_lightgbm,
     "autogluon":               model_autogluon,
+    "h2o":                     model_h2o,
+    "tpot":                    model_tpot,
     "mlp":                     model_mlp,
     "cnn1d":                   model_cnn1d,
     "lstm":                    model_lstm,
+    # deprecated: V1-style RF+AG ablation referansi icin korunur
     "stacking_rf_ag_meta_lr":  model_stacking_rf_ag_meta_lr,
 }
 

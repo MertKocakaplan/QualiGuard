@@ -148,7 +148,8 @@ def detect_smells_from_source(source: str) -> dict:
     # radon CC — fonksiyon seviyesinde
     try:
         cc_results = cc_visit(source)
-    except Exception:
+    except (SyntaxError, TypeError, ValueError) as exc:
+        logger.debug("radon cc_visit basarisiz: %s", exc)
         cc_results = []
 
     cc_map: dict[str, float] = {r.name: r.complexity for r in cc_results}
@@ -165,7 +166,8 @@ def detect_smells_from_source(source: str) -> dict:
     # radon MI — dosya seviyesinde
     try:
         mi = mi_visit(source, multi=True)
-    except Exception:
+    except (SyntaxError, TypeError, ValueError) as exc:
+        logger.debug("radon mi_visit basarisiz: %s", exc)
         mi = 100.0
 
     low_mi = 1 if mi < LOW_MI else 0

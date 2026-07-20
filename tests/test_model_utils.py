@@ -146,8 +146,25 @@ def test_get_feature_set_process_equals_all_for_commit():
     assert len(process) == len(all_set) == len(FEATURES_COMMIT)
 
 
-def test_get_feature_set_all_bug_has_48_cols():
-    assert len(mu.get_feature_set("bug", "all")) == len(FEATURES_BUG) == 48
+def test_get_feature_set_all_bug_matches_features_bug():
+    """get_feature_set('bug','all') FEATURES_BUG ile birebir tutarli olmali.
+
+    Feature selection sonrasi sayi degisebildiginden sabit 42 yerine
+    FEATURES_BUG'a dinamik baglanir (icerik + uzunluk esitligi)."""
+    fs = mu.get_feature_set("bug", "all")
+    assert len(fs) == len(FEATURES_BUG)
+    assert set(fs) == set(FEATURES_BUG)
+
+
+def test_get_feature_set_all_smell_matches_features_smell():
+    """get_feature_set('smell','all') FEATURES_SMELL ile birebir tutarli olmali.
+
+    Feature selection sonrasi sayi degisebildiginden sabit 48 yerine
+    FEATURES_SMELL'e dinamik baglanir (icerik + uzunluk esitligi)."""
+    from pipeline.config import FEATURES_SMELL
+    fs = mu.get_feature_set("smell", "all")
+    assert len(fs) == len(FEATURES_SMELL)
+    assert set(fs) == set(FEATURES_SMELL)
 
 
 def test_get_feature_set_all_commit_has_35_cols():
@@ -217,6 +234,8 @@ def test_classification_metrics_perfect_score():
     y = np.array([0, 1, 1, 0, 1])
     out = mu.classification_metrics(y, y, y.astype(float))
     assert out["f1"] == pytest.approx(1.0)
+    assert out["f1_weighted"] == pytest.approx(1.0)
+    assert out["f1_macro"] == pytest.approx(1.0)
     assert out["accuracy"] == pytest.approx(1.0)
     assert out["mcc"] == pytest.approx(1.0)
     assert out["pr_auc"] == pytest.approx(1.0)
@@ -228,6 +247,21 @@ def test_classification_metrics_pr_auc_nan_without_proba():
     out = mu.classification_metrics(y, pred)
     assert np.isnan(out["pr_auc"])
     assert out["f1"] == pytest.approx(1.0)
+    assert out["f1_weighted"] == pytest.approx(1.0)
+
+
+def test_classification_metrics_imbalanced_distinguishes_averages():
+    """
+    Class imbalance'da binary, weighted ve macro F1 farkli yorumlar verir.
+    "Predict-majority" baseline icin binary=0, weighted yuksek (paper'a not).
+    """
+    # 90 negatif + 10 pozitif; her zaman 0 tahmin et
+    y_true = np.array([0]*90 + [1]*10)
+    y_pred = np.zeros_like(y_true)
+    out = mu.classification_metrics(y_true, y_pred)
+    assert out["f1"] == pytest.approx(0.0)             # pozitif sinif sifir
+    assert out["f1_weighted"] > 0.8                    # majority class sisirir
+    assert out["f1_macro"] < 0.6                       # sinif eslik dengeli
 
 
 # ── confusion_quadrants ──────────────────────────────────────────

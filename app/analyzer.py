@@ -1,12 +1,14 @@
 """
 analyzer.py — Flask ana analiz akisi.
 
-V2'de agir kod `pipeline.*` modulune tasindi. Bu dosya sadece akisi
-orkestre eder: GitHub info -> clone -> ls-tree -> git log -> radon ->
-(opsiyonel) prospector -> ML tahmin -> health/smell ozet.
+Iki giris noktasi (F7):
+  - `analyze_repo(github_url, progress_callback)`
+      GitHub URL'den clone + analiz.
+  - `analyze_zip(zip_path, progress_callback)`
+      Yuklenmis ZIP'ten extract + analiz (.git/ zorunlu).
 
-Prospector aktif ise (PLAN §5.2 opt-in), `pipeline.prospector_runner`
-paralel olarak calisir, `smell_count` UI'de gosterilir.
+Iki yol da `_analyze_local_repo(repo_path, project_info, ...)`'a delege eder.
+V2'de agir kod `pipeline.*` modullerinde — bu dosya yalniz orkestrasyon.
 """
 from __future__ import annotations
 
@@ -19,7 +21,9 @@ from typing import Callable, Optional
 
 import pandas as pd
 
+from pipeline.ci_cd import detect_ci_cd_signals
 from pipeline.cloning import clone_repo, safe_repo_name
+from pipeline.code_smells import detect_smells_batch
 from pipeline.discovery import get_project_info
 from pipeline.git_metrics import (
     get_bulk_git_stats,
@@ -28,6 +32,11 @@ from pipeline.git_metrics import (
     should_skip_file,
 )
 from pipeline.static_metrics import calculate_derived, calculate_metrics
+from pipeline.zip_handler import (
+    ZipValidationError,
+    extract_local_meta,
+    safe_extract,
+)
 
 from . import predictor
 from .health import compute_project_health, compute_smell_summary, risk_tier
@@ -35,10 +44,11 @@ from .health import compute_project_health, compute_smell_summary, risk_tier
 logger = logging.getLogger(__name__)
 
 
+# ── Giris noktasi 1: GitHub URL ───────────────────────────────────
+
 def analyze_repo(
     github_url: str,
     progress_callback: Callable,
-    prospector_enabled: bool = False,
 ) -> dict:
     """
     GitHub repo'yu ucundan ucuna analiz et.
@@ -48,7 +58,6 @@ def analyze_repo(
     Args:
         github_url:        "https://github.com/user/repo" formatinda
         progress_callback: UI'ye ilerleme bildirimi
-        prospector_enabled: F7'de aktiflesir — simdilik no-op
 
     Returns:
         PLAN §5 icinde tanimli sonuc sozlugu.
@@ -66,90 +75,9 @@ def analyze_repo(
         if repo_path is None:
             return _error_result(github_url, clone_status)
 
-        progress_callback(20, "Python dosyalari listeleniyor...")
-        all_files = get_head_python_files(repo_path)
-        py_files = [f for f in all_files if not should_skip_file(f)]
-
-        if not py_files:
-            return _error_result(
-                github_url,
-                "Analiz edilecek Python dosyasi bulunamadi. Tum dosyalar filtrelenmis olabilir."
-            )
-
-        progress_callback(25, f"{len(py_files)} dosya bulundu. Git istatistikleri hesaplaniyor...")
-        git_stats = get_bulk_git_stats(repo_path, py_files)
-        commit_summary = get_repo_commit_summary(repo_path)
-
-        rows = _compute_per_file_rows(
-            repo_path, py_files, project_info, git_stats, progress_callback,
+        return _analyze_local_repo(
+            repo_path, project_info, github_url, progress_callback, start_pct=20,
         )
-        if not rows:
-            return _error_result(
-                github_url,
-                "Hicbir dosyadan gecerli metrik hesaplanamadi. Dosyalar cok kucuk veya parse edilemez olabilir."
-            )
-
-        prospector_results: dict[str, dict] = {}
-        if prospector_enabled:
-            progress_callback(70, f"Prospector calisiyor ({len(rows)} dosya)...")
-            prospector_results = _run_prospector_safe(repo_path, rows)
-
-        progress_callback(82, "Tahminler yapiliyor...")
-        feature_names = predictor.get_feature_names()
-        df = pd.DataFrame(rows)
-
-        df_commit = _prepare_feature_frame(df, feature_names["commit"])
-        commit_preds, commit_probs = predictor.predict_commit(df_commit)
-
-        df_bug = _prepare_feature_frame(df, feature_names["bug"])
-        bug_preds, bug_probs = predictor.predict_bug(df_bug)
-
-        smell_preds = None
-        smell_probs = None
-        if predictor.smell_available() and feature_names.get("smell"):
-            df_smell = _prepare_feature_frame(df, feature_names["smell"])
-            smell_preds, smell_probs = predictor.predict_smell(df_smell)
-
-        progress_callback(95, "Sonuclar hazirlaniyor...")
-        file_results = _assemble_file_results(
-            rows, commit_preds, commit_probs,
-            bug_preds, bug_probs,
-            smell_preds, smell_probs,
-            prospector_results,
-        )
-        file_results.sort(key=lambda x: x["bug_prob"], reverse=True)
-
-        project_health = compute_project_health(commit_summary, rows)
-        smell_summary  = compute_smell_summary(file_results, rows, prospector_results)
-
-        progress_callback(100, "Tamamlandi!")
-        # F5 — risk tier distribution for summary card
-        tier_counts = {"PASS": 0, "REVIEW": 0, "BLOCK": 0}
-        for f in file_results:
-            t = f.get("risk_tier", "PASS")
-            tier_counts[t] = tier_counts.get(t, 0) + 1
-
-        return {
-            "project_info":    project_info,
-            "github_url":      github_url,
-            "repo_name":       safe_repo_name(github_url),
-            "files":           file_results,
-            "project_health":  project_health,
-            "smell_summary":   smell_summary,
-            "prospector_enabled": prospector_enabled,
-            "summary": {
-                "total_files":      len(file_results),
-                "high_commit_risk": sum(1 for f in file_results if f["commit_pred"] == 1),
-                "has_bug_risk":     sum(1 for f in file_results if f["bug_pred"] == 1),
-                "has_smell_risk":   sum(1 for f in file_results if f.get("smell_pred") == 1),
-                # F5 — 3-tier quality gate counts
-                "risk_pass":   tier_counts["PASS"],
-                "risk_review": tier_counts["REVIEW"],
-                "risk_block":  tier_counts["BLOCK"],
-            },
-            "error":        None,
-            "error_detail": None,
-        }
 
     except Exception as exc:  # noqa: BLE001 — en dis kapan, traceback raporlariz
         tb = traceback.format_exc()
@@ -160,6 +88,182 @@ def analyze_repo(
         }
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ── Giris noktasi 2: ZIP upload (F7) ──────────────────────────────
+
+def analyze_zip(
+    zip_path: Path,
+    progress_callback: Callable,
+) -> dict:
+    """
+    Yuklenmis ZIP dosyasini extract et + ucundan ucuna analiz et.
+
+    Akis:
+      1. Validate: dosya sayisi, decompressed size, compression ratio,
+         path traversal (pipeline.zip_handler.safe_extract).
+      2. Repo koku tespit: top-level alt-dir'i takip et, `.git/` ZORUNLU.
+      3. extract_local_meta: git log'dan minimum project_info (stars=0,
+         contributor_count + project_age_days hesaplanir).
+      4. _analyze_local_repo: ortak akis.
+
+    Args:
+        zip_path:          Yuklenmis ZIP dosyasi (server tarafinda kayitli).
+        progress_callback: UI'ye ilerleme bildirimi.
+
+    Returns:
+        analyze_repo ile ayni semadaki sonuc sozlugu. `"source": "upload"`
+        ek anahtariyla.
+    """
+    fallback_name = zip_path.stem.replace(" ", "_") or "uploaded_repo"
+    tmp_dir = Path(tempfile.mkdtemp(prefix="metrihunter_zip_"))
+    try:
+        progress_callback(5, "ZIP dogrulaniyor (boyut + zip-bomb koruması)...")
+        progress_callback(10, "ZIP aciliyor + .git/ kontrol ediliyor...")
+        try:
+            repo_path = safe_extract(zip_path, tmp_dir)
+        except ZipValidationError as exc:
+            return _error_result("", str(exc), repo_name=fallback_name)
+        except Exception as exc:  # noqa: BLE001 — extract bozuk ZIP gibi
+            logger.warning("ZIP extract basarisiz: %s", exc)
+            return _error_result("", f"ZIP acilamadi: {exc}", repo_name=fallback_name)
+
+        progress_callback(15, "Yerel git history'den meta cikariliyor...")
+        project_info = extract_local_meta(repo_path, fallback_name)
+
+        return _analyze_local_repo(
+            repo_path, project_info, "", progress_callback, start_pct=20,
+            display_name=fallback_name,
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        tb = traceback.format_exc()
+        logger.exception("analyze_zip cokti: %s", exc)
+        return {
+            **_error_result("", str(exc) or "Bilinmeyen hata.", repo_name=fallback_name),
+            "error_detail": tb,
+        }
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ── Ortak analiz akisi ────────────────────────────────────────────
+
+def _analyze_local_repo(
+    repo_path: Path,
+    project_info: dict,
+    github_url: str,
+    progress_callback: Callable,
+    start_pct: int = 20,
+    display_name: Optional[str] = None,
+) -> dict:
+    """
+    Local repo (clone ya da extract sonrasi) icin tam analiz.
+
+    Iki giris noktasinin (URL/ZIP) ortak alt-akisi.
+
+    Args:
+        repo_path:        `.git/` iceren yerel kok dizini.
+        project_info:     GitHub API'den ya da extract_local_meta'dan dict.
+        github_url:       "" ise ZIP upload kaynak. Sonuc dict'inde gosterim.
+        progress_callback: callable
+        start_pct:        Bu helper'in baslangic progress yuzdesi.
+        display_name:     UI'da gosterilecek repo adi (ZIP upload icin).
+    """
+    progress_callback(start_pct, "Python dosyalari listeleniyor...")
+    all_files = get_head_python_files(repo_path)
+    py_files = [f for f in all_files if not should_skip_file(f)]
+
+    if not py_files:
+        return _error_result(
+            github_url,
+            "Analiz edilecek Python dosyasi bulunamadi. Tum dosyalar filtrelenmis olabilir.",
+            repo_name=display_name,
+        )
+
+    progress_callback(start_pct + 5,
+                      f"{len(py_files)} dosya bulundu. Git istatistikleri hesaplaniyor...")
+    git_stats = get_bulk_git_stats(repo_path, py_files)
+    commit_summary = get_repo_commit_summary(repo_path)
+
+    # F7 — CI/CD signals (DevOps practices indicator)
+    ci_cd_signals = detect_ci_cd_signals(repo_path)
+
+    # F7 — AST tabanli smell breakdown (her dosya icin 7 smell turu sayisi)
+    progress_callback(start_pct + 8, "Smell turleri tespit ediliyor (AST)...")
+    abs_paths = [repo_path / f for f in py_files]
+    smell_breakdown_raw = detect_smells_batch(abs_paths)
+    smell_breakdown: dict[str, dict] = {}
+    for rel, abs_p in zip(py_files, abs_paths):
+        res = smell_breakdown_raw.get(abs_p) or smell_breakdown_raw.get(str(abs_p))
+        if res:
+            smell_breakdown[rel] = res
+
+    rows = _compute_per_file_rows(
+        repo_path, py_files, project_info, git_stats, progress_callback,
+    )
+    if not rows:
+        return _error_result(
+            github_url,
+            "Hicbir dosyadan gecerli metrik hesaplanamadi. "
+            "Dosyalar cok kucuk veya parse edilemez olabilir.",
+            repo_name=display_name,
+        )
+
+    progress_callback(82, "Tahminler yapiliyor...")
+    feature_names = predictor.get_feature_names()
+    df = pd.DataFrame(rows)
+
+    df_bug = _prepare_feature_frame(df, feature_names["bug"])
+    bug_preds, bug_probs = predictor.predict_bug(df_bug)
+
+    smell_preds = None
+    smell_probs = None
+    if predictor.smell_available() and feature_names.get("smell"):
+        df_smell = _prepare_feature_frame(df, feature_names["smell"])
+        smell_preds, smell_probs = predictor.predict_smell(df_smell)
+
+    progress_callback(95, "Sonuclar hazirlaniyor...")
+    file_results = _assemble_file_results(
+        rows,
+        bug_preds, bug_probs,
+        smell_preds, smell_probs,
+        smell_breakdown=smell_breakdown,
+    )
+    file_results.sort(key=lambda x: x["bug_prob"], reverse=True)
+
+    project_health = compute_project_health(commit_summary, rows)
+    smell_summary  = compute_smell_summary(file_results, rows)
+
+    progress_callback(100, "Tamamlandi!")
+    # F5 — risk tier distribution for summary card
+    tier_counts = {"PASS": 0, "REVIEW": 0, "BLOCK": 0}
+    for f in file_results:
+        t = f.get("risk_tier", "PASS")
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    return {
+        "project_info":    project_info,
+        "github_url":      github_url,
+        "repo_name":       display_name or (safe_repo_name(github_url) if github_url else "local"),
+        "files":           file_results,
+        "project_health":  project_health,
+        "smell_summary":   smell_summary,
+        # F7 — CI/CD / DevOps practices karti
+        "ci_cd":           ci_cd_signals,
+        # F7 — Veri kaynagi: "github" veya "upload" (UI rozet icin)
+        "source":          "github" if github_url else "upload",
+        "summary": {
+            "total_files":      len(file_results),
+            "has_bug_risk":     sum(1 for f in file_results if f["bug_pred"] == 1),
+            "has_smell_risk":   sum(1 for f in file_results if f.get("smell_pred") == 1),
+            "risk_pass":   tier_counts["PASS"],
+            "risk_review": tier_counts["REVIEW"],
+            "risk_block":  tier_counts["BLOCK"],
+        },
+        "error":        None,
+        "error_detail": None,
+    }
 
 
 # ── Yardimcilar ──────────────────────────────────────────────────
@@ -214,46 +318,13 @@ def _prepare_feature_frame(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return df[cols].fillna(0.0)
 
 
-def _run_prospector_safe(
-    repo_path: Path,
-    rows: list[dict],
-) -> dict[str, dict]:
-    """
-    Prospector'i rows icindeki dosya yollarina uygula.
-
-    Prospector kurulu degilse veya patlarsa bos sozluk dondurur;
-    analiz akisi kesilmez.
-    """
-    try:
-        from pipeline.prospector_runner import run_prospector_batch
-    except ImportError as exc:
-        logger.warning("prospector_runner import edilemedi: %s", exc)
-        return {}
-
-    abs_paths = [repo_path / r["file_path"] for r in rows]
-    try:
-        raw = run_prospector_batch(abs_paths)
-    except Exception as exc:  # noqa: BLE001 — batch cokerse akis devam etsin
-        logger.warning("run_prospector_batch cokti: %s", exc)
-        return {}
-
-    # repo-relative key'e donustur
-    results: dict[str, dict] = {}
-    for row, abs_path in zip(rows, abs_paths):
-        pres = raw.get(abs_path) or raw.get(str(abs_path))
-        if pres:
-            results[row["file_path"]] = pres
-    return results
-
-
 def _assemble_file_results(
     rows: list[dict],
-    commit_preds, commit_probs,
     bug_preds, bug_probs,
     smell_preds, smell_probs,
-    prospector_results: Optional[dict[str, dict]] = None,
+    smell_breakdown: Optional[dict[str, dict]] = None,
 ) -> list[dict]:
-    prospector_results = prospector_results or {}
+    smell_breakdown = smell_breakdown or {}
     results = []
     for i, row in enumerate(rows):
         fpath = row["file_path"]
@@ -261,8 +332,6 @@ def _assemble_file_results(
         r_score = round(float(bug_probs[i]), 4)
         entry = {
             "file_path":             fpath,
-            "commit_pred":           int(commit_preds[i]),
-            "commit_prob":           round(float(commit_probs[i]), 4),
             "bug_pred":              int(bug_preds[i]),
             "bug_prob":              round(float(bug_probs[i]), 4),
             "loc":                   int(row.get("loc", 0)),
@@ -276,11 +345,20 @@ def _assemble_file_results(
             entry["smell_pred"] = int(smell_preds[i])
             entry["smell_prob"] = round(float(smell_probs[i]), 4)
 
-        pres = prospector_results.get(fpath)
-        if pres:
-            cnt = pres.get("smell_count")
-            entry["prospector_count"] = int(cnt) if cnt is not None else None
-            entry["prospector_categories"] = pres.get("categories") or {}
+        # F7 — AST smell breakdown (7 tur: long_method, large_class, ...)
+        sb = smell_breakdown.get(fpath)
+        if sb:
+            entry["smell_breakdown"] = {
+                "total":               int(sb.get("smell_count", 0) or 0),
+                "long_method":         int(sb.get("smell_long_method", 0) or 0),
+                "large_class":         int(sb.get("smell_large_class", 0) or 0),
+                "long_param_list":     int(sb.get("smell_long_param_list", 0) or 0),
+                "deep_nesting":        int(sb.get("smell_deep_nesting", 0) or 0),
+                "high_complexity":     int(sb.get("smell_high_complexity", 0) or 0),
+                "low_maintainability": int(sb.get("smell_low_maintainability", 0) or 0),
+                "god_function":        int(sb.get("smell_god_function", 0) or 0),
+            }
+
         results.append(entry)
     return results
 
@@ -292,16 +370,26 @@ def _read_file(path: Path) -> Optional[str]:
         return None
 
 
-def _error_result(github_url: str, msg: str) -> dict:
+def _error_result(
+    github_url: str,
+    msg: str,
+    repo_name: Optional[str] = None,
+) -> dict:
+    """Hata sonucunda UI'a donen minimum sema."""
+    name = repo_name or (safe_repo_name(github_url) if github_url else "uploaded")
     return {
         "project_info":   {},
         "github_url":     github_url,
-        "repo_name":      safe_repo_name(github_url),
+        "repo_name":      name,
         "files":          [],
         "project_health": {},
         "smell_summary":  {},
-        "prospector_enabled": False,
-        "summary":        {"total_files": 0, "high_commit_risk": 0, "has_bug_risk": 0, "has_smell_risk": 0},
+        "ci_cd":          {},
+        "source":         "github" if github_url else "upload",
+        "summary":        {
+            "total_files": 0,
+            "has_bug_risk": 0, "has_smell_risk": 0,
+        },
         "error":          msg,
         "error_detail":   None,
     }

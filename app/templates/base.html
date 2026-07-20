@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}MetricHunter{% endblock %}</title>
+  <title>{% block title %}QualiGuard{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -13,8 +13,8 @@
 <body>
   <nav class="navbar" role="navigation" aria-label="Main navigation">
     <a href="{{ url_for('main.index') }}" class="navbar-brand">
-      <span class="brand-mark" aria-hidden="true">MH</span>
-      MetricHunter
+      <span class="brand-mark" aria-hidden="true">QG</span>
+      QualiGuard
     </a>
     <span class="navbar-sub">Commit &amp; Bug Prediction Tool</span>
 
@@ -78,7 +78,7 @@
 
       <p class="token-help">
         No token?
-        <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=MetricHunter"
+        <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=QualiGuard"
            target="_blank"
            rel="noopener noreferrer">
           Create one on GitHub
@@ -96,9 +96,11 @@
   </main>
 
   <footer class="footer" role="contentinfo">
-    <span>MetricHunter &mdash; AutoGluon + Random Forest &mdash; 2026</span>
+    <span>QualiGuard &mdash; LightGBM + AutoGluon Stacking &mdash; 2026</span>
   </footer>
 
+  {# jQuery — DataTables bagimliligi; tum sayfalar icin yuklenir #}
+  <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/token.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

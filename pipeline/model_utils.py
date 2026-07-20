@@ -24,7 +24,12 @@ from sklearn.metrics import (
 from sklearn.model_selection import GroupKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from pipeline.config import FEATURES_BUG, FEATURES_COMMIT, FEATURES_PROCESS
+from pipeline.config import (
+    FEATURES_BUG,
+    FEATURES_COMMIT,
+    FEATURES_PROCESS,
+    FEATURES_SMELL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +74,10 @@ def get_feature_set(task: str, variant: str) -> tuple[str, ...]:
         variant: "static" | "derived" | "process" | "all"
 
     Returns:
-        Sutun isimlerinin tuple'i. Variant "all" icin task'a gore
-        `FEATURES_COMMIT` (35) ya da `FEATURES_BUG` (48) doner.
+        Sutun isimlerinin tuple'i. Variant "all" icin task'a gore:
+            commit -> FEATURES_COMMIT (35)
+            bug    -> FEATURES_BUG    (42)  — kw_*_count'lar leak nedeniyle disarida
+            smell  -> FEATURES_SMELL  (48)  — kw_*_count'lar dahil (mesru korelasyon)
     """
     task = task.lower()
     variant = variant.lower()
@@ -84,7 +91,11 @@ def get_feature_set(task: str, variant: str) -> tuple[str, ...]:
         # Static + Derived + Proje meta (T1 'all' ile esdeger)
         return STATIC_FEATURES + DERIVED_FEATURES + PROJECT_META_FEATURES
     if variant == "all":
-        return FEATURES_COMMIT if task == "commit" else FEATURES_BUG
+        if task == "commit":
+            return FEATURES_COMMIT
+        if task == "smell":
+            return FEATURES_SMELL
+        return FEATURES_BUG
     raise ValueError(f"Gecersiz variant: {variant}")
 
 
@@ -300,11 +311,26 @@ def classification_metrics(
     y_pred: np.ndarray,
     y_proba: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """F1, accuracy, MCC; olasilik varsa PR-AUC."""
+    """
+    Sinif metrikleri: F1 (3 variant), accuracy, MCC, PR-AUC.
+
+    - `f1`          : binary (sklearn default) — sadece pozitif sinif (1) F1.
+                       Defect prediction literaturunde standart (Hassan 2009,
+                       Tantithamthavorn 2017). Class-imbalance dataset'lerinde
+                       gercek "bug bulma" basarisini gosterir.
+    - `f1_weighted` : tum siniflar, sinif buyuklugu ile agirlikli ortalama.
+                       Majority class baskin oldugu icin imbalanced dataset'te
+                       yapay sisebilir; V1 raporlari ile karsilastirma icin
+                       saklanir.
+    - `f1_macro`    : tum siniflar, esit agirlik. Imbalanced dataset'te en
+                       dengeli yorum.
+    """
     out = {
-        "f1":       float(f1_score(y_true, y_pred, zero_division=0)),
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "mcc":      float(matthews_corrcoef(y_true, y_pred)),
+        "f1":          float(f1_score(y_true, y_pred, zero_division=0)),
+        "f1_weighted": float(f1_score(y_true, y_pred, average="weighted", zero_division=0)),
+        "f1_macro":    float(f1_score(y_true, y_pred, average="macro",    zero_division=0)),
+        "accuracy":    float(accuracy_score(y_true, y_pred)),
+        "mcc":         float(matthews_corrcoef(y_true, y_pred)),
     }
     if y_proba is not None:
         try:

@@ -6,6 +6,6 @@ terminal'de uzun sureli calisir. `# %%` cell markers YOKTUR.
 
 Calistirma:
     python -m scripts.collect --target 1000
-    python -m scripts.train_final --tasks commit,bug,smell
+    python -m scripts.train_final --tasks bug,smell
 """
 from __future__ import annotations

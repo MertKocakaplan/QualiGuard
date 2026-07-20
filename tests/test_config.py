@@ -9,13 +9,39 @@ from pipeline import config
 
 
 def test_feature_counts_match_plan():
-    """F3.5 sonrasi: T1=35, T2=T3=48 (+4 process-history proxies)."""
+    """
+    FEATURES_COMMIT sabit 35 (feature selection yalniz BUG/SMELL'i etkiler).
+
+    BUG/SMELL, feature selection (analysis/05) sonrasi LEAN — kesin sayi 05
+    ciktisina baglidir (ornek calismada 42->31, 48->28). Kirilgan sabit sayi
+    yerine invariant test edilir: orijinal ust siniri (42/48) asmaz, bos olmaz.
+    Leak invariant ayrica test_features_bug_excludes_keyword_counts'ta.
+    """
     assert len(config.FEATURES_COMMIT) == 35, \
         f"T1 commit 35 olmali, {len(config.FEATURES_COMMIT)} bulundu"
-    assert len(config.FEATURES_BUG) == 48, \
-        f"T2 bug 48 olmali, {len(config.FEATURES_BUG)} bulundu"
-    assert len(config.FEATURES_SMELL) == 48, \
-        f"T3 smell 48 olmali, {len(config.FEATURES_SMELL)} bulundu"
+    assert 0 < len(config.FEATURES_BUG) <= 42, \
+        f"FEATURES_BUG 1..42 (lean) olmali, {len(config.FEATURES_BUG)} bulundu"
+    assert 0 < len(config.FEATURES_SMELL) <= 48, \
+        f"FEATURES_SMELL 1..48 (lean) olmali, {len(config.FEATURES_SMELL)} bulundu"
+
+
+def test_features_bug_excludes_keyword_counts():
+    """Regresyon (KRITIK leak korumasi): bug_kw_*_count FEATURES_BUG'a girmemeli.
+
+    bug_keyword label'i sum(bug_kw_*_count)>0'dan turedigi icin bu sutunlar
+    FEATURES_BUG'a girerse model trivial ~%99 F1'e sicrar (label leakage).
+    Bu invariant feature selection'dan BAGIMSIZ HER ZAMAN gecerli olmali.
+
+    NOT: Eski tasarimda bu sutunlar FEATURES_SMELL'de tutuluyordu (smell label'i
+    keyword'den turemez — leak degil). Feature selection (05) bunlari importance≈0
+    bularak smell'den de cikardi; artik smell'de olmalari ZORUNLU degil.
+    """
+    forbidden = {
+        "bug_kw_fix_count", "bug_kw_bug_count", "bug_kw_error_count",
+        "bug_kw_defect_count", "bug_kw_issue_count", "bug_kw_anomaly_count",
+    }
+    leaked = forbidden & set(config.FEATURES_BUG)
+    assert not leaked, f"FEATURES_BUG'da leak sutun(lar): {leaked}"
 
 
 def test_feature_names_unique():

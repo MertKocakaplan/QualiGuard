@@ -1,5 +1,5 @@
 /* ================================================================
-   MetricHunter — Neumorphism Tema
+   QualiGuard — Neumorphism Tema
    Palet: bg=#e0e5ec  shadow-light=#fff  shadow-dark=#a3b1c6
           accent=#6c5ce7  success=#00b894  danger=#d63031
    ================================================================ */
@@ -853,11 +853,19 @@ table.dataTable tbody tr:hover td {
 .row-bug    td { background: #d6303110 !important; }
 .row-commit td { background: #6c5ce710 !important; }
 .row-both   td { background: #d6303120 !important; }
-.row-smell  td { box-shadow: inset 3px 0 0 var(--smell); }
+.row-smell  td { background: #ea580c10 !important; }   /* turuncu tinting, row-bug pattern'i */
 
 .row-bug:hover    td { background: #d6303120 !important; }
 .row-commit:hover td { background: #6c5ce720 !important; }
 .row-both:hover   td { background: #d6303130 !important; }
+.row-smell:hover  td { background: #ea580c20 !important; }
+
+/* DataTables sort icin hidden raw numeric kolonlari — DOM'da kalir, ekranda gozukmez */
+.hidden-sort-col,
+th.hidden-sort-col,
+td.hidden-sort-col {
+  display: none !important;
+}
 
 .file-cell,
 .file-col {
@@ -1503,4 +1511,234 @@ table.dataTable tbody tr:hover td {
   .card-raised {
     padding: 1.2rem;
   }
+}
+
+/* ── F7 — DevOps Practices (CI/CD signals) ─────────────────────── */
+
+.devops-row {
+  margin: 1.4rem 0;
+}
+
+.devops-card {
+  padding: 1.1rem 1.3rem;
+}
+
+.devops-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.devops-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #2d3d8a;
+  text-transform: uppercase;
+  display: block;
+}
+
+.devops-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-top: 0.15rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.badge-devops-yes {
+  background: #10b98115;
+  color: #047857;
+  border: 1px solid #10b98140;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.badge-devops-no {
+  background: #94a3b815;
+  color: #475569;
+  border: 1px solid #94a3b840;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.devops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.devops-signal {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: background 0.15s ease;
+}
+
+.devops-signal.is-on {
+  background: #10b98112;
+  border-color: #10b98130;
+  color: #047857;
+}
+
+.devops-signal.is-off {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #94a3b8;
+}
+
+.devops-abbr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: currentColor;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.devops-signal.is-on .devops-abbr {
+  background: #10b981;
+}
+
+.devops-signal.is-off .devops-abbr {
+  background: #cbd5e1;
+}
+
+.devops-name {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.devops-state {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+/* ── F7 — Source tabs (GitHub URL <-> Upload ZIP) ───────────── */
+
+.source-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.source-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  letter-spacing: 0.01em;
+}
+
+.source-tab:hover {
+  color: var(--accent);
+}
+
+.source-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.source-panel {
+  display: none;
+}
+
+.source-panel.is-active {
+  display: block;
+}
+
+/* File input — input-neumorphic'a benzer gorunum */
+.input-file {
+  flex: 1;
+  font-size: 0.88rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-sm, 8px);
+  background: #f8fafc;
+  color: #334155;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.input-file:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #f1f5f9;
+}
+
+.input-file:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.input-file::file-selector-button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.4rem 0.9rem;
+  margin-right: 0.7rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.input-file::file-selector-button:hover {
+  background: var(--accent-dk);
+}
+
+.input-file:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── F7 — Smell breakdown mini tags (file-level row) ───────────── */
+
+.smell-mini-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem;
+  margin-top: 0.3rem;
+}
+
+.smell-mini-tag {
+  display: inline-block;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  background: var(--smell-soft);
+  color: var(--smell-dk);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  cursor: help;
 }

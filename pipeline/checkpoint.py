@@ -132,15 +132,23 @@ def is_project_done(project_name: str) -> bool:
     Sadece status=='ok' olanlari true sayar — failed projelere tekrar
     denenebilsin. Eger stricter davranis istenirse caller
     `get_processed_set()` uzerinde istedigi gibi filtreleyebilir.
+
+    Lock altinda okunur; concurrent mark_project_done ile yarismaz.
     """
-    data = _load_processed_raw()
-    entry = data["processed"].get(project_name)
+    with _processed_lock:
+        data = _load_processed_raw()
+        entry = data["processed"].get(project_name)
     return bool(entry and entry.get("status") == "ok")
 
 
 def get_processed_set() -> set[str]:
-    """Status='ok' olan proje isimlerinin kumesini dondurur."""
-    data = _load_processed_raw()
+    """
+    Status='ok' olan proje isimlerinin kumesini dondurur.
+
+    Lock altinda okunur; concurrent mark_project_done ile yarismaz.
+    """
+    with _processed_lock:
+        data = _load_processed_raw()
     return {
         name
         for name, entry in data["processed"].items()

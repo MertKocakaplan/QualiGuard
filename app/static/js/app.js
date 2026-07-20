@@ -180,7 +180,16 @@
   function enableForm() {
     submitBtn.disabled = false;
     urlInput.disabled  = false;
-    urlInput.focus();
+    /* F7 — Upload form'u da varsa etkinlestir */
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (zipInput)  zipInput.disabled  = false;
+    /* Focus aktif sekmeye */
+    var activePanel = document.querySelector(".source-panel.is-active");
+    if (activePanel && activePanel.dataset.tab === "upload" && zipInput) {
+      zipInput.focus();
+    } else {
+      urlInput.focus();
+    }
   }
 
   function showError(msg) {
@@ -208,6 +217,138 @@
 
   function isGithubUrl(url) {
     return /^https?:\/\/github\.com\/[\w.\-]+\/[\w.\-]+(\.git)?\/?$/.test(url);
+  }
+
+  /* ── F7 — Tab toggle (GitHub URL <-> Upload ZIP) ────── */
+  var tabs   = document.querySelectorAll(".source-tab");
+  var panels = document.querySelectorAll(".source-panel");
+  tabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var name = btn.dataset.tab;
+      tabs.forEach(function (b) {
+        var on = (b === btn);
+        b.classList.toggle("is-active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      panels.forEach(function (p) {
+        p.classList.toggle("is-active", p.dataset.tab === name);
+      });
+      clearError();
+    });
+  });
+
+  /* ── F7 — Upload form submit ────────────────────────── */
+  var uploadForm = document.getElementById("uploadForm");
+  var zipInput   = document.getElementById("zipInput");
+  var zipError   = document.getElementById("zipError");
+  var uploadBtn  = document.getElementById("uploadBtn");
+
+  if (uploadForm) {
+    zipInput.addEventListener("change", function () {
+      clearZipError();
+      clearError();
+    });
+
+    uploadForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearError();
+      clearZipError();
+
+      var file = zipInput.files && zipInput.files[0];
+      if (!file) {
+        showZipError("Please select a ZIP file.");
+        zipInput.focus();
+        return;
+      }
+      if (!/\.zip$/i.test(file.name)) {
+        showZipError("Only .zip files are accepted.");
+        zipInput.focus();
+        return;
+      }
+      /* Boyut on-kontrol — Flask zaten 413 ile reddeder, ama erken UX uyari */
+      var maxBytes = 100 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        showZipError(
+          "ZIP file is too large (" +
+          (file.size / 1024 / 1024).toFixed(1) +
+          " MB). Limit: 100 MB."
+        );
+        return;
+      }
+
+      showProgress();
+      setPercent(0, "Uploading ZIP file...");
+      disableUploadForm();
+
+      var fd = new FormData();
+      fd.append("zipfile", file);
+
+      fetch("/analyze_upload", {
+        method: "POST",
+        body:   fd
+      })
+      .then(function (r) {
+        var status = r.status;
+        return r.json().then(function (d) {
+          return { status: status, data: d };
+        });
+      })
+      .then(function (res) {
+        if (res.status === 413) {
+          showError(res.data.error || "ZIP file too large (max 100 MB).");
+          hideProgress();
+          enableUploadForm();
+          return;
+        }
+        if (res.status === 503) {
+          showError(res.data.error || "Server not ready.");
+          hideProgress();
+          enableUploadForm();
+          return;
+        }
+        if (res.data.error) {
+          showError(res.data.error);
+          hideProgress();
+          enableUploadForm();
+          return;
+        }
+        /* Polling — analyze_repo ile ayni task_id mekanizmasi */
+        pollStatus(res.data.task_id);
+      })
+      .catch(function (err) {
+        showError(
+          "Could not connect to the server. (" +
+          (err.message || "Network error") + ")"
+        );
+        hideProgress();
+        enableUploadForm();
+      });
+    });
+  }
+
+  function disableUploadForm() {
+    if (uploadBtn) uploadBtn.disabled = true;
+    if (zipInput)  zipInput.disabled  = true;
+  }
+
+  function enableUploadForm() {
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (zipInput)  zipInput.disabled  = false;
+    if (zipInput)  zipInput.focus();
+  }
+
+  function showZipError(msg) {
+    if (!zipError) return;
+    zipError.textContent = msg;
+    zipError.classList.remove("hidden");
+    if (zipInput) zipInput.setAttribute("aria-invalid", "true");
+  }
+
+  function clearZipError() {
+    if (!zipError) return;
+    zipError.textContent = "";
+    zipError.classList.add("hidden");
+    if (zipInput) zipInput.removeAttribute("aria-invalid");
   }
 
 }());

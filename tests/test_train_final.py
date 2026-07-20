@@ -1,11 +1,14 @@
 """
-test_train_final.py — scripts.train_final CLI + T1/T3 egitim uc-uca.
+test_train_final.py — scripts.train_final CLI + T3 egitim uc-uca.
 
 - --dry-run: args'lari dogru okur, hicbir sey yazmaz.
-- T1 (commit) + T3 (smell) gorevleri mini sentetik dataset uzerinde egitilir
-  (AutoGluon agir bagimlilik, T2 bug burada skip).
+- T3 (smell) gorevi mini sentetik dataset uzerinde egitilir
+  (AutoGluon agir bagimlilik oldugundan T2 bug bu testlerde skip).
 - Cikti artifact'lari gercekten yaziliyor mu, feature_names.json guncelleniyor
   mu, project_stats.json olusuyor mu kontrol edilir.
+
+NOT (V2.1): T1 commit standalone task'i kaldirildi. Bu dosyada commit'e dair
+testler bu nedenle bug+smell odakli yeniden yazildi.
 """
 from __future__ import annotations
 
@@ -16,18 +19,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.config import FEATURES_BUG
+from pipeline.config import FEATURES_BUG, FEATURES_SMELL
 from scripts import train_final
 
 
 # ── CLI / dry-run ─────────────────────────────────────────────────
 
 def test_cli_dry_run(capsys):
-    rc = train_final.main(["--dry-run", "--tasks", "commit,smell"])
+    rc = train_final.main(["--dry-run", "--tasks", "bug,smell"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "train_final" in out
-    assert "commit" in out and "smell" in out
+    assert "bug" in out and "smell" in out
 
 
 def test_cli_invalid_task_exits_2():
@@ -47,13 +50,20 @@ def test_cli_invalid_time_limit_exits():
 
 def _synth_dataset(n_projects: int = 6, rows_per: int = 30,
                    seed: int = 0) -> pd.DataFrame:
-    """FEATURES_BUG tum sutunlari + etiketler iceren mini dataset."""
+    """
+    FEATURES_BUG ∪ FEATURES_SMELL tum sutunlari + etiketler.
+
+    Feature selection (analysis/05) sonrasi BUG ve SMELL setleri BAGIMSIZ
+    (biri digerinin superset'i degil); ikisinin birlesimi uretilir ki hem T2
+    (bug) hem T3 (smell) e2e icin tum feature sutunlari DataFrame'de mevcut olsun.
+    """
     rng = np.random.default_rng(seed)
     rows = []
     base_ts = pd.Timestamp("2024-01-01", tz="UTC")
+    _all_feats = sorted(set(FEATURES_BUG) | set(FEATURES_SMELL))
     for pi in range(n_projects):
         for ri in range(rows_per):
-            rec: dict = {col: float(rng.uniform(0, 100)) for col in FEATURES_BUG}
+            rec: dict = {col: float(rng.uniform(0, 100)) for col in _all_feats}
             rec.update({
                 "project_name":         f"u/p{pi}",
                 "category_primary":     "Web" if pi % 2 == 0 else "AI/ML",
@@ -71,10 +81,10 @@ def _synth_dataset(n_projects: int = 6, rows_per: int = 30,
     return pd.DataFrame(rows)
 
 
-# ── End-to-end T1 + T3 (AutoGluon atlanir) ──────────────────────
+# ── End-to-end T3 (AutoGluon atlanir, sadece smell egitilir) ───
 
-def test_train_commit_and_smell_e2e(tmp_path: Path, monkeypatch):
-    """T1 ve T3 mini sentetik veride calisip artifact'lari yaziyor mu."""
+def test_train_smell_only_e2e(tmp_path: Path, monkeypatch):
+    """T3 mini sentetik veride calisip artifact'lari yaziyor mu."""
     models_dir = tmp_path / "models"
     models_dir.mkdir()
     dataset = tmp_path / "ds.parquet"
@@ -85,25 +95,23 @@ def test_train_commit_and_smell_e2e(tmp_path: Path, monkeypatch):
 
     rc = train_final.main([
         "--dataset", str(dataset),
-        "--tasks", "commit,smell",
+        "--tasks", "smell",
         "--models-dir", str(models_dir),
-        "--no-smote",
         "--log-level", "WARNING",
     ])
     assert rc == 0
 
-    # T1 artifact'lari
-    assert (models_dir / "commit_rf.joblib").exists()
-    assert (models_dir / "scaler_commit.joblib").exists()
     # T3 artifact'lari
     assert (models_dir / "smell_rf.joblib").exists()
     assert (models_dir / "scaler_smell.joblib").exists()
+    # T1 commit V2.1'de kaldirildi — bu dosyalar olusmamali
+    assert not (models_dir / "commit_rf.joblib").exists()
+    assert not (models_dir / "scaler_commit.joblib").exists()
 
-    # feature_names.json iki gorev icin de yazilmis
+    # feature_names.json sadece smell icin yazilmis
     fn = json.loads((models_dir / "feature_names.json").read_text(encoding="utf-8"))
-    assert "commit" in fn and "smell" in fn
-    assert len(fn["commit"]) == 35
-    assert len(fn["smell"]) == 48
+    assert "smell" in fn
+    assert len(fn["smell"]) == 28
 
     # project_stats.json olusmus
     ps = json.loads((models_dir / "project_stats.json").read_text(encoding="utf-8"))
@@ -111,9 +119,9 @@ def test_train_commit_and_smell_e2e(tmp_path: Path, monkeypatch):
     assert "by_category" in ps
 
 
-def test_bug_task_without_autogluon_exits_clean(tmp_path: Path, monkeypatch):
+def test_bug_task_without_autogluon_falls_back_to_smell(tmp_path: Path, monkeypatch):
     """
-    AutoGluon yoksa T2 bug 'atlandi' mesajiyla warn eder, T1 yine de calisir.
+    AutoGluon yoksa T2 bug 'atlandi' mesajiyla warn eder, T3 smell yine calisir.
     Burada AutoGluon gercekten kurulu olsa bile, ImportError'i simule ederek
     davranisi test ediyoruz.
     """
@@ -136,15 +144,14 @@ def test_bug_task_without_autogluon_exits_clean(tmp_path: Path, monkeypatch):
 
     rc = train_final.main([
         "--dataset", str(dataset),
-        "--tasks", "commit,bug",
+        "--tasks", "bug,smell",
         "--models-dir", str(models_dir),
-        "--no-smote",
         "--log-level", "WARNING",
     ])
-    # T1 basarili oldugu icin cikis 0
+    # T3 smell basarili oldugu icin cikis 0
     assert rc == 0
-    # T1 yazildi
-    assert (models_dir / "commit_rf.joblib").exists()
+    # T3 smell yazildi
+    assert (models_dir / "smell_rf.joblib").exists()
     # T2 stacking artifact'lari yazilmamali (autogluon yok)
     assert not (models_dir / "bug_rf_base.joblib").exists()
     assert not (models_dir / "bug_ag_base").exists()

@@ -256,7 +256,7 @@ def test_dry_run_writes_nothing(collect_env, capsys):
     rc = collect_mod.main(["--dry-run", "--target", "42"])
     assert rc == 0
     captured = capsys.readouterr()
-    assert "MetricHunter V2" in captured.out
+    assert "QualiGuard V2" in captured.out
     assert "target" in captured.out
     # Hicbir cikti dosyasi yok
     assert not list(collect_env["projects"].glob("*"))

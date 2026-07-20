@@ -15,6 +15,11 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = "metrihunter-secret-2026"
 
+    # F7 — ZIP upload boyut limiti (default 100 MB)
+    # Flask request body bu boyutu asarsa 413 (Request Entity Too Large) doner.
+    # Limit pipeline.zip_handler.MAX_DECOMPRESSED_SIZE ile uyumlu olmali.
+    app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
     from .routes import bp
     app.register_blueprint(bp)
 

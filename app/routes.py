@@ -10,6 +10,8 @@ import logging
 import os
 import random
 import re
+import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -18,12 +20,13 @@ from pathlib import Path
 
 import requests
 from flask import Blueprint, abort, jsonify, render_template, request
+from werkzeug.utils import secure_filename
 
 from pipeline.config import GITHUB_RATELIMIT_URL, GITHUB_TOKEN_ENV
 from pipeline.rate_limit import github_headers, github_token_configured
 
 from . import predictor
-from .analyzer import analyze_repo
+from .analyzer import analyze_repo, analyze_zip
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +252,6 @@ def _parse_bool_field(val: str | None) -> bool:
 @bp.route("/analyze", methods=["POST"])
 def analyze():
     url = (request.form.get("url") or "").strip()
-    prospector_enabled = _parse_bool_field(request.form.get("prospector"))
 
     if not url:
         return jsonify({"error": "URL bos birakilamaz."}), 400
@@ -271,7 +273,6 @@ def analyze():
         result = analyze_repo(
             url,
             progress_callback=cb,
-            prospector_enabled=prospector_enabled,
         )
 
         if result.get("error"):
@@ -282,6 +283,79 @@ def analyze():
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"task_id": task_id})
+
+
+# ── F7 — ZIP upload endpoint ──────────────────────────────────────
+
+@bp.route("/analyze_upload", methods=["POST"])
+def analyze_upload():
+    """
+    Yuklenmis ZIP dosyasini extract + analiz et.
+
+    Beklentiler:
+      - Multipart form, dosya alani adi "zipfile"
+      - Uzanti: .zip
+      - Boyut <= 100 MB (Flask MAX_CONTENT_LENGTH; asilirsa 413 doner)
+      - Icerikte .git/ dizini ZORUNLU (analyze_zip dogrular)
+
+    Asenkron: arka plan thread'inde analyze_zip; task_id ile polling.
+    """
+    file = request.files.get("zipfile")
+    if file is None or not file.filename:
+        return jsonify({"error": "ZIP dosya secilmedi."}), 400
+
+    fname = file.filename.strip()
+    if not fname.lower().endswith(".zip"):
+        return jsonify({"error": "Yalnizca .zip dosyalari kabul edilir."}), 400
+
+    if not predictor.models_ready():
+        return jsonify({"error":
+            "Modeller hazir degil. Once scripts/train_final.py calistirin."}), 503
+
+    # ZIP'i guvenli isimle gecici dizine kaydet
+    upload_dir = Path(tempfile.mkdtemp(prefix="mh_upload_"))
+    safe_name  = secure_filename(fname) or "upload.zip"
+    zip_path   = upload_dir / safe_name
+    try:
+        file.save(str(zip_path))
+    except OSError as exc:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        logger.exception("ZIP kaydedilemedi: %s", exc)
+        return jsonify({"error": f"ZIP server'a kaydedilemedi: {exc}"}), 500
+
+    if random.random() < 0.1:
+        threading.Thread(target=_cleanup_tasks, daemon=True).start()
+
+    task_id = str(uuid.uuid4())
+    _set_task(task_id, status="running", percent=0,
+              message="ZIP yuklendi, isleme aliniyor...", result=None)
+
+    def run():
+        def cb(pct, msg):
+            _set_task(task_id, percent=pct, message=msg)
+        try:
+            result = analyze_zip(zip_path, progress_callback=cb)
+            if result.get("error"):
+                short_err = result["error"].split("\n")[0][:300]
+                _set_task(task_id, status="error", percent=100,
+                          message=short_err, result=result)
+            else:
+                _set_task(task_id, status="done", percent=100,
+                          message="Tamamlandi!", result=result)
+        finally:
+            # Yuklenmis ZIP + upload tmp dir'i temizle (analiz tmp'i analyzer ici)
+            shutil.rmtree(upload_dir, ignore_errors=True)
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"task_id": task_id})
+
+
+# Flask MAX_CONTENT_LENGTH'i asarsa 413 ile JSON donsun (HTML hata yerine).
+@bp.app_errorhandler(413)
+def _too_large(_e):
+    return jsonify({
+        "error": "Yuklenen dosya cok buyuk. ZIP boyutu 100 MB sinirini asiyor.",
+    }), 413
 
 
 @bp.route("/api/status/<task_id>")
@@ -332,10 +406,21 @@ def results(task_id):
 
     result = task.get("result") or {}
     project_stats = predictor.get_project_stats() or {}
+    # UI flags + visible_count: scripts block (DataTables init) bunlari template-set
+    # araciligiyla goremiyor (Jinja2 block-scope kirilgan); route context'inden gec
+    # ki hem content hem scripts block'larinda gorunsun.
+    smell_ok = predictor.smell_available()
+    prosp_on = bool(result.get("prospector_enabled"))
+    smell_sum = result.get("smell_summary") or {}
+    show_prosp = bool(prosp_on and smell_sum.get("prospector_enabled"))
+    visible_count = 7 + (2 if smell_ok else 0) + (1 if show_prosp else 0)
     return render_template(
         "results.html",
         result=result,
         task_id=task_id,
         project_stats=project_stats,
-        smell_model_available=predictor.smell_available(),
+        smell_model_available=smell_ok,
+        show_smell=smell_ok,
+        show_prospector=show_prosp,
+        visible_count=visible_count,
     )

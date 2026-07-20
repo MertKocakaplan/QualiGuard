@@ -21,17 +21,17 @@
 # %% Hucre 1 - Imports + ortam kurulumu
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")  # headless: figurler diske kaydedilir, plt.show() bloklamaz
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from pipeline.categories import CATEGORY_KEYWORDS, OTHER_CATEGORY
 from pipeline.config import (
-    CHECKPOINT_DIR,
     FIGURES_DIR,
     OUTPUT_DIR,
     SMELL_BINARY_PERCENTILE,
@@ -41,6 +41,8 @@ from pipeline.dataset_builder import (
     add_dynamic_smell_binary,
     add_project_categories,
     apply_commit_filter,
+    enrich_with_discovery_meta,
+    load_discovery_meta,
     load_project_parquets,
     sensitivity_summary,
 )
@@ -67,31 +69,23 @@ print(f"Toplam satir : {len(df_full):,}")
 if "project_name" in df_full.columns:
     print(f"Proje sayisi : {df_full['project_name'].nunique()}")
 
-# %% Hucre 3 - Opsiyonel discovery metadatasi
-# discovery.json icinde topics/description ya da description varsa
-# kategorilendirme isabetini artirir. V2 discovery bu alanlari henuz
-# kaydetmiyor olabilir; yoksa proje adi tek basina kullanilir.
-disc_path = CHECKPOINT_DIR / "discovery.json"
-project_meta: dict[str, dict] = {}
-if disc_path.exists():
-    try:
-        disc_payload = json.loads(disc_path.read_text(encoding="utf-8"))
-        for item in disc_payload.get("found", []):
-            name = item.get("full_name")
-            if not name:
-                continue
-            project_meta[name] = {
-                "topics":      list(item.get("topics", []) or []),
-                "description": item.get("description", "") or "",
-            }
-        print(f"discovery.json: {len(project_meta)} proje meta yuklendi")
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"discovery.json okunamadi: {exc}. Yalnizca project_name ile kategori atanacak.")
+# %% Hucre 3 - Discovery meta'si (topics + description + created_at)
+# discovery.json'daki topics+description kategorizasyon icin kritik.
+# Eksik olursa ~%85 proje "Diger" dusuyor (V1 ile karsilastirildiginda).
+# load_discovery_meta dataset_builder altindaki kanonik yardimcidir.
+project_meta = load_discovery_meta()
+if project_meta:
+    n_with_topics = sum(1 for m in project_meta.values() if m.get("topics"))
+    n_with_desc   = sum(1 for m in project_meta.values() if m.get("description"))
+    print(f"discovery.json: {len(project_meta)} proje meta yuklendi  "
+          f"(topics dolu: {n_with_topics}, description dolu: {n_with_desc})")
 else:
-    print("discovery.json yok. Yalnizca project_name ile kategori atanacak.")
+    print("discovery.json yok veya bos. Yalnizca project_name ile kategori atanacak.")
 
-# %% Hucre 4 - Kategori atama (project_name + opsiyonel meta)
+# %% Hucre 4 - Kategori atama + eski parquet'ler icin meta backfill
 df = df_full.copy()
+# Eski parquet'lerde created_at/description eksikse buradan eklenir
+df = enrich_with_discovery_meta(df, meta=project_meta)
 df = add_project_categories(df, project_meta=project_meta)
 
 # Proje bazinda kategori dagilimi (dosya degil)
