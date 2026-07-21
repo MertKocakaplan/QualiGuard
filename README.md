@@ -108,3 +108,7 @@ run.py      Flask entry point
 ```
 
 Produced at runtime and intentionally **not** version-controlled: `output/` (collected data and results), `models/` (trained artifacts), `repos/` (cloned repositories).
+
+## License
+
+Released under the MIT License — see [LICENSE](LICENSE).
