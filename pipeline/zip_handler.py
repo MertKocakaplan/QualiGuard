@@ -65,15 +65,15 @@ def validate_zip_metadata(zip_path: Path) -> tuple[int, int]:
         n = len(infos)
         if n > MAX_FILE_COUNT:
             raise ZipValidationError(
-                f"ZIP icinde cok fazla dosya: {n:,} (limit: {MAX_FILE_COUNT:,})."
+                f"Too many files in the ZIP: {n:,} (limit: {MAX_FILE_COUNT:,})."
             )
 
         # 2. Decompressed toplam boyut
         total_size = sum(info.file_size for info in infos)
         if total_size > MAX_DECOMPRESSED_SIZE:
             raise ZipValidationError(
-                f"Decompressed boyut {total_size / 1024 / 1024:.1f} MB "
-                f"limiti asti ({MAX_DECOMPRESSED_SIZE / 1024 / 1024:.0f} MB)."
+                f"Decompressed size {total_size / 1024 / 1024:.1f} MB "
+                f"exceeds the limit ({MAX_DECOMPRESSED_SIZE / 1024 / 1024:.0f} MB)."
             )
 
         # 3. Compression ratio (zip bomb koruması)
@@ -82,7 +82,7 @@ def validate_zip_metadata(zip_path: Path) -> tuple[int, int]:
             ratio = total_size / compressed_size
             if ratio > MAX_COMPRESSION_RATIO:
                 raise ZipValidationError(
-                    f"Compression ratio {ratio:.0f}x suphali (zip bomb?). "
+                    f"Compression ratio {ratio:.0f}x is suspicious (zip bomb?). "
                     f"Limit: {MAX_COMPRESSION_RATIO}x."
                 )
 
@@ -93,11 +93,11 @@ def validate_zip_metadata(zip_path: Path) -> tuple[int, int]:
                 continue
             # Mutlak yol (Windows ya da Unix)
             if name.startswith("/") or name.startswith("\\") or (len(name) > 1 and name[1] == ":"):
-                raise ZipValidationError(f"Mutlak yol icerik (path traversal): {name!r}")
+                raise ZipValidationError(f"Absolute path entry (path traversal): {name!r}")
             # ".." parcasi
             parts = Path(name).parts
             if any(p == ".." for p in parts):
-                raise ZipValidationError(f"'..' icerik (path traversal): {name!r}")
+                raise ZipValidationError(f"'..' entry (path traversal): {name!r}")
 
     return total_size, n
 
@@ -126,8 +126,8 @@ def find_repo_root(extract_dir: Path) -> Path:
         return subdirs[0]
 
     raise ZipValidationError(
-        "ZIP icinde '.git/' dizini bulunamadi. Bug ve commit tahmini "
-        "git gecmisine dayanir. Lutfen repository'i '.git/' dahil zipleyin: "
+        "No '.git/' directory was found in the ZIP. Defect and commit prediction "
+        "rely on git history. Please zip the repository including '.git/': "
         "`cd repo && zip -r ../repo.zip .`"
     )
 
@@ -190,7 +190,7 @@ def extract_local_meta(repo_path: Path, fallback_name: str) -> dict:
             if authors:
                 info["contributor_count"] = len(authors)
     except (subprocess.TimeoutExpired, OSError) as exc:
-        logger.debug("git log --format=%%aN basarisiz: %s", exc)
+        logger.debug("git log --format=%%aN failed: %s", exc)
 
     # Project age + created_at (ilk commit zamani)
     try:
@@ -208,6 +208,6 @@ def extract_local_meta(repo_path: Path, fallback_name: str) -> dict:
                 info["project_age_days"] = max((datetime.now() - first_dt).days, 1)
                 info["created_at"] = first_dt.isoformat()
     except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
-        logger.debug("git log --format=%%at basarisiz: %s", exc)
+        logger.debug("git log --format=%%at failed: %s", exc)
 
     return info

@@ -107,8 +107,8 @@ def _load_models() -> None:
 
         if missing:
             raise FileNotFoundError(
-                f"Eksik model dosyalari: {', '.join(missing)}\n"
-                "Once scripts/train_final.py calistirin."
+                f"Missing model files: {', '.join(missing)}\n"
+                "Run scripts/train_final.py first."
             )
 
         _bug_base    = joblib.load(MODELS_DIR / base_bug_artifact)
@@ -133,9 +133,9 @@ def _load_models() -> None:
                 if model_files:
                     _bug_ag = h2o.load_model(str(model_files[0]))
                 else:
-                    logger.warning("H2O artifact dizini bos: %s", automl_bug_artifact)
+                    logger.warning("H2O artifact directory is empty: %s", automl_bug_artifact)
             except ImportError:
-                logger.warning("H2O yuklenemedi; bug tahmini devre disi.")
+                logger.warning("H2O could not be loaded; bug prediction is disabled.")
 
         with open(MODELS_DIR / "feature_names.json", encoding="utf-8") as f:
             _feature_names = json.load(f)
@@ -156,7 +156,7 @@ def _load_models() -> None:
                 with open(stats_path, encoding="utf-8") as f:
                     _project_stats = json.load(f)
             except (json.JSONDecodeError, OSError) as exc:
-                logger.warning("project_stats.json okunamadi: %s", exc)
+                logger.warning("Could not read project_stats.json: %s", exc)
 
         _loaded = True
 
@@ -221,11 +221,11 @@ def predict_smell(features_df: pd.DataFrame):
     _load_models()
     if _smell_model is None or _scaler_smell is None:
         raise RuntimeError(
-            "Smell modeli henuz egitilmemis. scripts/train_final.py ile egitim gerekli."
+            "The smell model has not been trained yet; train it with scripts/train_final.py."
         )
     cols = _feature_names.get("smell") if _feature_names else None  # type: ignore[union-attr]
     if not cols:
-        raise RuntimeError("feature_names.json icinde 'smell' tanimli degil.")
+        raise RuntimeError("'smell' is not defined in feature_names.json.")
     X = features_df[cols].values.astype(float)
     X_s = _scaler_smell.transform(X)
     probs = _smell_model.predict_proba(X_s)[:, 1]

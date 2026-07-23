@@ -64,13 +64,13 @@ def analyze_repo(
     """
     tmp_dir = Path(tempfile.mkdtemp(prefix="metrihunter_"))
     try:
-        progress_callback(5, "GitHub proje bilgileri aliniyor...")
+        progress_callback(5, "Fetching GitHub project information...")
         try:
             project_info = get_project_info(github_url)
         except RuntimeError as exc:
             return _error_result(github_url, str(exc))
 
-        progress_callback(10, "Repo klonlaniyor...")
+        progress_callback(10, "Cloning repository...")
         repo_path, clone_status = clone_repo(github_url, tmp_dir)
         if repo_path is None:
             return _error_result(github_url, clone_status)
@@ -83,7 +83,7 @@ def analyze_repo(
         tb = traceback.format_exc()
         logger.exception("analyze_repo cokti: %s", exc)
         return {
-            **_error_result(github_url, str(exc) or "Bilinmeyen hata."),
+            **_error_result(github_url, str(exc) or "Unknown error."),
             "error_detail": tb,
         }
     finally:
@@ -118,17 +118,17 @@ def analyze_zip(
     fallback_name = zip_path.stem.replace(" ", "_") or "uploaded_repo"
     tmp_dir = Path(tempfile.mkdtemp(prefix="metrihunter_zip_"))
     try:
-        progress_callback(5, "ZIP dogrulaniyor (boyut + zip-bomb koruması)...")
-        progress_callback(10, "ZIP aciliyor + .git/ kontrol ediliyor...")
+        progress_callback(5, "Validating ZIP (size + zip-bomb protection)...")
+        progress_callback(10, "Extracting ZIP and checking for .git/...")
         try:
             repo_path = safe_extract(zip_path, tmp_dir)
         except ZipValidationError as exc:
             return _error_result("", str(exc), repo_name=fallback_name)
         except Exception as exc:  # noqa: BLE001 — extract bozuk ZIP gibi
-            logger.warning("ZIP extract basarisiz: %s", exc)
-            return _error_result("", f"ZIP acilamadi: {exc}", repo_name=fallback_name)
+            logger.warning("ZIP extraction failed: %s", exc)
+            return _error_result("", f"Could not open the ZIP: {exc}", repo_name=fallback_name)
 
-        progress_callback(15, "Yerel git history'den meta cikariliyor...")
+        progress_callback(15, "Extracting metadata from local git history...")
         project_info = extract_local_meta(repo_path, fallback_name)
 
         return _analyze_local_repo(
@@ -140,7 +140,7 @@ def analyze_zip(
         tb = traceback.format_exc()
         logger.exception("analyze_zip cokti: %s", exc)
         return {
-            **_error_result("", str(exc) or "Bilinmeyen hata.", repo_name=fallback_name),
+            **_error_result("", str(exc) or "Unknown error.", repo_name=fallback_name),
             "error_detail": tb,
         }
     finally:
@@ -170,19 +170,19 @@ def _analyze_local_repo(
         start_pct:        Bu helper'in baslangic progress yuzdesi.
         display_name:     UI'da gosterilecek repo adi (ZIP upload icin).
     """
-    progress_callback(start_pct, "Python dosyalari listeleniyor...")
+    progress_callback(start_pct, "Listing Python files...")
     all_files = get_head_python_files(repo_path)
     py_files = [f for f in all_files if not should_skip_file(f)]
 
     if not py_files:
         return _error_result(
             github_url,
-            "Analiz edilecek Python dosyasi bulunamadi. Tum dosyalar filtrelenmis olabilir.",
+            "No Python files to analyse were found; all files may have been filtered out.",
             repo_name=display_name,
         )
 
     progress_callback(start_pct + 5,
-                      f"{len(py_files)} dosya bulundu. Git istatistikleri hesaplaniyor...")
+                      f"{len(py_files)} files found. Computing Git statistics...")
     git_stats = get_bulk_git_stats(repo_path, py_files)
     commit_summary = get_repo_commit_summary(repo_path)
 
@@ -190,7 +190,7 @@ def _analyze_local_repo(
     ci_cd_signals = detect_ci_cd_signals(repo_path)
 
     # F7 — AST tabanli smell breakdown (her dosya icin 7 smell turu sayisi)
-    progress_callback(start_pct + 8, "Smell turleri tespit ediliyor (AST)...")
+    progress_callback(start_pct + 8, "Detecting code smell types (AST)...")
     abs_paths = [repo_path / f for f in py_files]
     smell_breakdown_raw = detect_smells_batch(abs_paths)
     smell_breakdown: dict[str, dict] = {}
@@ -205,12 +205,12 @@ def _analyze_local_repo(
     if not rows:
         return _error_result(
             github_url,
-            "Hicbir dosyadan gecerli metrik hesaplanamadi. "
-            "Dosyalar cok kucuk veya parse edilemez olabilir.",
+            "No valid metrics could be computed for any file. "
+            "The files may be too small or unparsable.",
             repo_name=display_name,
         )
 
-    progress_callback(82, "Tahminler yapiliyor...")
+    progress_callback(82, "Running predictions...")
     feature_names = predictor.get_feature_names()
     df = pd.DataFrame(rows)
 
@@ -223,7 +223,7 @@ def _analyze_local_repo(
         df_smell = _prepare_feature_frame(df, feature_names["smell"])
         smell_preds, smell_probs = predictor.predict_smell(df_smell)
 
-    progress_callback(95, "Sonuclar hazirlaniyor...")
+    progress_callback(95, "Preparing results...")
     file_results = _assemble_file_results(
         rows,
         bug_preds, bug_probs,
@@ -235,7 +235,7 @@ def _analyze_local_repo(
     project_health = compute_project_health(commit_summary, rows)
     smell_summary  = compute_smell_summary(file_results, rows)
 
-    progress_callback(100, "Tamamlandi!")
+    progress_callback(100, "Completed!")
     # F5 — risk tier distribution for summary card
     tier_counts = {"PASS": 0, "REVIEW": 0, "BLOCK": 0}
     for f in file_results:
@@ -282,7 +282,7 @@ def _compute_per_file_rows(
     for i, fpath in enumerate(py_files):
         if i % update_every == 0:
             pct = 30 + int((i / n) * 50)
-            progress_callback(pct, f"Metrikler hesaplaniyor ({i + 1}/{n})...")
+            progress_callback(pct, f"Computing metrics ({i + 1}/{n})...")
 
         source = _read_file(repo_path / fpath)
         if source is None:

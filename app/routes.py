@@ -120,7 +120,7 @@ def api_token_status():
             "limit":      60,
             "reset_at":   None,
             "login":      None,
-            "message":    "Token tanimli degil.",
+            "message":    "No token configured.",
         })
 
     try:
@@ -138,7 +138,7 @@ def api_token_status():
                 "limit":     None,
                 "reset_at":  None,
                 "login":     None,
-                "message":   "Token gecersiz veya suresi dolmus.",
+                "message":   "Token is invalid or expired.",
             })
 
         rl_data   = rl_resp.json()
@@ -168,7 +168,7 @@ def api_token_status():
             "limit":     limit,
             "reset_at":  reset_str,
             "login":     login,
-            "message":   "Token aktif.",
+            "message":   "Token is active.",
         })
 
     except requests.RequestException as exc:
@@ -179,7 +179,7 @@ def api_token_status():
             "limit":     None,
             "reset_at":  None,
             "login":     None,
-            "message":   f"GitHub'a baglanilamadi: {str(exc)[:120]}",
+            "message":   f"Could not connect to GitHub: {str(exc)[:120]}",
         })
 
 
@@ -189,12 +189,12 @@ def api_token_set():
     token = (data.get("token") or "").strip()
 
     if not token:
-        return jsonify({"ok": False, "message": "Token bos birakilamaz."}), 400
+        return jsonify({"ok": False, "message": "Token cannot be empty."}), 400
 
     if not re.match(r"^(ghp_|github_pat_|gho_|ghu_|ghs_)\w+$", token):
         return jsonify({
             "ok": False,
-            "message": "Gecersiz token formati.",
+            "message": "Invalid token format.",
         }), 400
 
     try:
@@ -207,11 +207,11 @@ def api_token_set():
             timeout=8,
         )
         if resp.status_code == 401:
-            return jsonify({"ok": False, "message": "Token gecersiz (401)."}), 400
+            return jsonify({"ok": False, "message": "Invalid token (401)."}), 400
         if resp.status_code not in (200, 304):
-            return jsonify({"ok": False, "message": f"GitHub yanit vermedi: HTTP {resp.status_code}."}), 400
+            return jsonify({"ok": False, "message": f"GitHub did not respond: HTTP {resp.status_code}."}), 400
     except requests.RequestException as exc:
-        return jsonify({"ok": False, "message": f"GitHub'a baglanilamadi: {str(exc)[:120]}"}), 502
+        return jsonify({"ok": False, "message": f"Could not connect to GitHub: {str(exc)[:120]}"}), 502
 
     os.environ[GITHUB_TOKEN_ENV] = token
     try:
@@ -219,7 +219,7 @@ def api_token_set():
     except OSError:
         pass
 
-    return jsonify({"ok": True, "message": "Token basariyla kaydedildi."})
+    return jsonify({"ok": True, "message": "Token saved successfully."})
 
 
 @bp.route("/api/token", methods=["DELETE"])
@@ -229,7 +229,7 @@ def api_token_delete():
         _remove_env_token()
     except OSError:
         pass
-    return jsonify({"ok": True, "message": "Token temizlendi."})
+    return jsonify({"ok": True, "message": "Token cleared."})
 
 
 # ── Ana route'lar ────────────────────────────────────────────────
@@ -254,17 +254,17 @@ def analyze():
     url = (request.form.get("url") or "").strip()
 
     if not url:
-        return jsonify({"error": "URL bos birakilamaz."}), 400
+        return jsonify({"error": "URL cannot be empty."}), 400
     if not _is_github_url(url):
-        return jsonify({"error": "Gecerli bir GitHub repo URL'si girin."}), 400
+        return jsonify({"error": "Enter a valid GitHub repository URL."}), 400
     if not predictor.models_ready():
-        return jsonify({"error": "Modeller hazir degil. Once scripts/train_final.py calistirin."}), 503
+        return jsonify({"error": "Models are not ready. Run scripts/train_final.py first."}), 503
 
     if random.random() < 0.1:
         threading.Thread(target=_cleanup_tasks, daemon=True).start()
 
     task_id = str(uuid.uuid4())
-    _set_task(task_id, status="running", percent=0, message="Baslatiliyor...", result=None)
+    _set_task(task_id, status="running", percent=0, message="Starting...", result=None)
 
     def run():
         def cb(pct, msg):
@@ -279,7 +279,7 @@ def analyze():
             short_err = result["error"].split("\n")[0][:300]
             _set_task(task_id, status="error", percent=100, message=short_err, result=result)
         else:
-            _set_task(task_id, status="done", percent=100, message="Tamamlandi!", result=result)
+            _set_task(task_id, status="done", percent=100, message="Completed!", result=result)
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"task_id": task_id})
@@ -302,15 +302,15 @@ def analyze_upload():
     """
     file = request.files.get("zipfile")
     if file is None or not file.filename:
-        return jsonify({"error": "ZIP dosya secilmedi."}), 400
+        return jsonify({"error": "No ZIP file selected."}), 400
 
     fname = file.filename.strip()
     if not fname.lower().endswith(".zip"):
-        return jsonify({"error": "Yalnizca .zip dosyalari kabul edilir."}), 400
+        return jsonify({"error": "Only .zip files are accepted."}), 400
 
     if not predictor.models_ready():
         return jsonify({"error":
-            "Modeller hazir degil. Once scripts/train_final.py calistirin."}), 503
+            "Models are not ready. Run scripts/train_final.py first."}), 503
 
     # ZIP'i guvenli isimle gecici dizine kaydet
     upload_dir = Path(tempfile.mkdtemp(prefix="mh_upload_"))
@@ -320,15 +320,15 @@ def analyze_upload():
         file.save(str(zip_path))
     except OSError as exc:
         shutil.rmtree(upload_dir, ignore_errors=True)
-        logger.exception("ZIP kaydedilemedi: %s", exc)
-        return jsonify({"error": f"ZIP server'a kaydedilemedi: {exc}"}), 500
+        logger.exception("Failed to save ZIP: %s", exc)
+        return jsonify({"error": f"Could not save the ZIP on the server: {exc}"}), 500
 
     if random.random() < 0.1:
         threading.Thread(target=_cleanup_tasks, daemon=True).start()
 
     task_id = str(uuid.uuid4())
     _set_task(task_id, status="running", percent=0,
-              message="ZIP yuklendi, isleme aliniyor...", result=None)
+              message="ZIP uploaded, starting analysis...", result=None)
 
     def run():
         def cb(pct, msg):
@@ -341,7 +341,7 @@ def analyze_upload():
                           message=short_err, result=result)
             else:
                 _set_task(task_id, status="done", percent=100,
-                          message="Tamamlandi!", result=result)
+                          message="Completed!", result=result)
         finally:
             # Yuklenmis ZIP + upload tmp dir'i temizle (analiz tmp'i analyzer ici)
             shutil.rmtree(upload_dir, ignore_errors=True)
@@ -354,7 +354,7 @@ def analyze_upload():
 @bp.app_errorhandler(413)
 def _too_large(_e):
     return jsonify({
-        "error": "Yuklenen dosya cok buyuk. ZIP boyutu 100 MB sinirini asiyor.",
+        "error": "The uploaded file is too large; the ZIP exceeds the 100 MB limit.",
     }), 413
 
 
@@ -363,14 +363,14 @@ def api_status(task_id):
     try:
         uuid.UUID(task_id)
     except ValueError:
-        return jsonify({"error": "Gecersiz task_id."}), 400
+        return jsonify({"error": "Invalid task_id."}), 400
 
     task = _get_task(task_id)
     if task is None:
         return jsonify({
             "status": "not_found",
             "percent": 0,
-            "message": "Gorev bulunamadi. Oturum suresi dolmus olabilir.",
+            "message": "Task not found; the session may have expired.",
         }), 404
 
     return jsonify({
@@ -393,7 +393,7 @@ def results(task_id):
             "index.html",
             models_ready=predictor.models_ready(),
             github_token_ok=github_token_configured(),
-            flash_message="Sonuc suresi dolmus veya bulunamadi.",
+            flash_message="The result has expired or was not found.",
         )
 
     if task.get("status") == "running":

@@ -112,18 +112,18 @@ def get_project_info(github_url: str) -> dict:
     if resp.status_code == 403:
         remaining = resp.headers.get("X-RateLimit-Remaining", "?")
         raise RuntimeError(
-            f"GitHub API rate limit asildi (kalan: {remaining}). "
-            "GITHUB_TOKEN tanimlayin."
+            f"GitHub API rate limit exceeded (remaining: {remaining}). "
+            "Set a GITHUB_TOKEN."
         )
     if resp.status_code == 404:
-        raise RuntimeError(f"Repo bulunamadi: {full_name}")
+        raise RuntimeError(f"Repository not found: {full_name}")
     if resp.status_code != 200:
-        raise RuntimeError(f"GitHub API hatasi: HTTP {resp.status_code}")
+        raise RuntimeError(f"GitHub API error: HTTP {resp.status_code}")
 
     try:
         data = resp.json()
     except ValueError as exc:
-        raise RuntimeError(f"GitHub cevabi parse edilemedi: {exc}") from exc
+        raise RuntimeError(f"Could not parse the GitHub response: {exc}") from exc
 
     return {
         "stars":             int(data.get("stargazers_count", 0)),
@@ -274,7 +274,7 @@ def search_projects(
             try:
                 contributors = _contributor_count(full_name)
             except Exception as exc:
-                logger.warning("contributor enrichment basarisiz (%s): %s", full_name, exc)
+                logger.warning("contributor enrichment failed (%s): %s", full_name, exc)
                 continue
             if contributors > max_contributors:
                 continue
@@ -315,5 +315,5 @@ def search_projects(
     data["completed_at"] = datetime.now(timezone.utc).isoformat()
     checkpoint.save_checkpoint("discovery", data)
 
-    logger.info("discovery tamamlandi: %d proje", len(found))
+    logger.info("discovery completed: %d projects", len(found))
     return found[:target_count]

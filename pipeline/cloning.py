@@ -78,19 +78,19 @@ def clone_repo(url: str, target_dir: Path) -> tuple[Optional[Path], str]:
         )
     except subprocess.TimeoutExpired:
         shutil.rmtree(repo_path, ignore_errors=True)
-        return None, f"Klonlama zaman asimina ugradi ({CLONE_TIMEOUT_SECONDS}s)."
+        return None, f"Cloning timed out ({CLONE_TIMEOUT_SECONDS}s)."
     except FileNotFoundError:
-        return None, "git komutu bulunamadi. Git kurulu ve PATH'te mi?"
+        return None, "git command not found. Is Git installed and on PATH?"
     except OSError as exc:
         shutil.rmtree(repo_path, ignore_errors=True)
-        return None, f"Klonlama hatasi: {str(exc)[:200]}"
+        return None, f"Cloning error: {str(exc)[:200]}"
 
     if result.returncode != 0:
         err = result.stderr.strip()[:300]
         shutil.rmtree(repo_path, ignore_errors=True)
-        return None, f"Git clone hatasi: {err}"
+        return None, f"Git clone error: {err}"
 
     if not (repo_path / ".git").exists():
-        return None, "Klonlama tamamlandi ancak .git bulunamadi."
+        return None, "Cloning finished but .git was not found."
 
     return repo_path, "basarili"

@@ -18,6 +18,8 @@ pandas==2.3.3
 
 # AutoGluon Python 3.10.6'da egitilmis artefaktlar (require_py_version_match=False)
 autogluon==1.5.0
+# AutoGluon ensemble'i CatBoost alt-modeli icerir — inference icin zorunlu
+catboost>=1.2
 
 # Parquet okuma (autogluon dolayli indirir, ama acik pin bagimlilik zinciri icin)
 pyarrow>=14
